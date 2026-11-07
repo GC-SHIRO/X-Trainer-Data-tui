@@ -1,0 +1,10 @@
+# Data collection only (teleop + recording). Python 3.8+ on Ubuntu.
+numpy
+opencv-python
+pyrealsense2
+pyzmq
+pyserial
+requests
+tyro==0.8.8
+# terminal UI (experiments/run_tui.py)
+textual>=0.47
