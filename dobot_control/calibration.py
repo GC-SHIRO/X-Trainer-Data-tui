@@ -84,9 +84,9 @@ def find_ports(log: Log = _nolog, list_ports: Callable[[], List[str]] = _scan_po
     """
     ports = list(list_ports())
     res = PortScanResult(ports=list(ports))
-    log("info", f"Serial ports: {', '.join(ports) or 'none'}")
+    log("info", f"串口：{', '.join(ports) or '无'}")
     if len(ports) < 4:
-        res.errors.append(f"At least 4 ports expected (2 hands + 2 grippers), found {len(ports)}")
+        res.errors.append(f"应至少有 4 个串口（2 个主手 + 2 个夹爪），只找到 {len(ports)} 个")
 
     _, hands = load_ini_data_hands()
     remaining = list(ports)
@@ -108,8 +108,8 @@ def find_ports(log: Log = _nolog, list_ports: Callable[[], List[str]] = _scan_po
             res.hands[section] = found
             log("info", f"{section}: {found[0]} @ {found[1]}")
         else:
-            res.errors.append(f"{section}: no port answered")
-            log("warn", f"{section}: not found")
+            res.errors.append(f"{section}：没有串口响应")
+            log("warn", f"{section}：未找到")
 
     _, grippers = load_ini_data_gripper()
     for section in GRIPPER_SECTIONS:
@@ -118,7 +118,7 @@ def find_ports(log: Log = _nolog, list_ports: Callable[[], List[str]] = _scan_po
             try:
                 dev = open_gripper(grippers[section], port)
             except Exception as e:
-                log("info", f"{section}: {port} no answer ({e or type(e).__name__})")
+                log("info", f"{section}：{port} 无响应（{e or type(e).__name__}）")
                 continue
             _close(dev)
             found = port
@@ -128,12 +128,12 @@ def find_ports(log: Log = _nolog, list_ports: Callable[[], List[str]] = _scan_po
             res.grippers[section] = found
             log("info", f"{section}: {found}")
         else:
-            res.errors.append(f"{section}: no port answered")
-            log("warn", f"{section}: not found")
+            res.errors.append(f"{section}：没有串口响应")
+            log("warn", f"{section}：未找到")
 
     res.leftover = remaining
     if remaining:
-        log("warn", f"Unassigned ports: {', '.join(remaining)}")
+        log("warn", f"未分配的串口：{', '.join(remaining)}")
     return res
 
 
@@ -198,7 +198,7 @@ def read_offsets(log: Log = _nolog, open_driver=_open_offset_driver,
         finally:
             _close(dev)
         out[section] = compute_offsets(section, cfg, pos)
-        log("info", f"{section}: offsets {out[section].offsets}, gripper {out[section].gripper_config}")
+        log("info", f"{section}：零位 {out[section].offsets}，夹爪 {out[section].gripper_config}")
     return out
 
 
@@ -250,7 +250,7 @@ class HandCheck:
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="hand-check", daemon=True)
         self._thread.start()
-        self._log("info", "Hand check running: short-press A to unlock/lock a hand")
+        self._log("info", "手柄检查已开始：短按 A 解锁/锁定主手")
 
     def stop(self) -> None:
         self._stop.set()
@@ -293,7 +293,7 @@ class HandCheck:
         except Exception as e:
             with self._lock:
                 self._state.error = str(e) or type(e).__name__
-            self._log("error", f"Hand check stopped: {self._state.error}")
+            self._log("error", f"手柄检查中止：{self._state.error}")
         finally:
             with self._lock:
                 self._state.running = False
@@ -327,7 +327,7 @@ def check_cameras(list_ids: Callable[[], List[str]] = _realsense_ids) -> CameraC
 def save_cameras(assigned: Dict[str, str]) -> None:
     values = [assigned[k] for k in CAMERA_KEYS]
     if len(set(values)) != len(values):
-        raise ValueError("each camera needs a different serial")
+        raise ValueError("三个相机必须是不同的序列号")
     ini = load_ini()
     for k in CAMERA_KEYS:
         ini.set("CAMERA", k, assigned[k])

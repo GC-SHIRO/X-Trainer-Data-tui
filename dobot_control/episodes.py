@@ -78,7 +78,7 @@ def scan_episode(path: str) -> EpisodeInfo:
     for sub in SUBDIRS:
         d = os.path.join(path, sub)
         if not os.path.isdir(d):
-            info.issues.append(f"missing {sub}/")
+            info.issues.append(f"缺少 {sub}/")
             info.counts[sub] = 0
             continue
         idx = _indices(d, EXT[sub])
@@ -88,13 +88,13 @@ def scan_episode(path: str) -> EpisodeInfo:
     if obs:
         info.first_idx, info.last_idx = obs[0], obs[-1]
         if obs[-1] - obs[0] + 1 != len(obs):
-            info.issues.append(f"frame gaps ({len(obs)} frames in {obs[0]}..{obs[-1]})")
+            info.issues.append(f"帧号不连续（{obs[0]}..{obs[-1]} 中只有 {len(obs)} 帧）")
     elif "observation" in idx_sets:
-        info.issues.append("empty")
+        info.issues.append("空 episode")
     ref = set(obs)
     for sub, idx in idx_sets.items():
         if sub != "observation" and set(idx) != ref:
-            info.issues.append(f"{sub}: {len(idx)} files vs {len(obs)} observations")
+            info.issues.append(f"{sub}：{len(idx)} 张图像，observation {len(obs)} 帧")
     info.size_bytes = _dir_size(path)
     return info
 
@@ -113,19 +113,19 @@ def verify_episode(info: EpisodeInfo, max_frames: Optional[int] = None) -> Episo
                 obs = pickle.load(f)
             missing = PKL_KEYS - set(obs)
             if missing:
-                issues.append(f"{i}.pkl missing {sorted(missing)}")
+                issues.append(f"{i}.pkl 缺少字段 {sorted(missing)}")
             elif np.asarray(obs["joint_positions"]).shape != (14,) or np.asarray(obs["control"]).shape != (14,):
-                issues.append(f"{i}.pkl wrong shape")
+                issues.append(f"{i}.pkl 数组形状不对")
         except Exception as e:
-            issues.append(f"{i}.pkl unreadable ({type(e).__name__})")
+            issues.append(f"{i}.pkl 无法读取（{type(e).__name__}）")
         for sub in SUBDIRS[:3]:
             jp = os.path.join(info.path, sub, f"{i}.jpg")
             if os.path.exists(jp) and os.path.getsize(jp) == 0:
-                issues.append(f"{sub}/{i}.jpg empty")
+                issues.append(f"{sub}/{i}.jpg 是空文件")
         if len(issues) > 20:
-            issues.append("... (stopped after 20 problems)")
+            issues.append("……（超过 20 个问题，停止检查）")
             break
-    info.issues = [x for x in info.issues if not x.startswith("deep: ")] + [f"deep: {x}" for x in issues]
+    info.issues = [x for x in info.issues if not x.startswith("深度检查：")] + [f"深度检查：{x}" for x in issues]
     info.verified = not issues
     return info
 

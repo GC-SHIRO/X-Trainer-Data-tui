@@ -57,8 +57,7 @@ class PreviewWindow:
     def show(self, source: Source, on_close: Optional[OnClose] = None) -> None:
         """Show frames from `source`, replacing any current source."""
         if not display_available():
-            raise RuntimeError("no graphical display (DISPLAY is not set); the camera window needs a "
-                               "desktop session or ssh -X")
+            raise RuntimeError("没有图形显示（未设置 DISPLAY），相机窗口需要桌面会话或 ssh -X")
         with self._lock:
             self._source, self._on_close = source, on_close
             if self._thread is None:

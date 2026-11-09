@@ -28,8 +28,8 @@ def firmware_error(robot_ip: str, name: str) -> Optional[str]:
     """None when the firmware is acceptable, otherwise a human-readable error."""
     version = get_firmware_version(robot_ip)
     if version is None or not (MIN_FIRMWARE <= version < MAX_FIRMWARE):
-        return (f"{name} [{robot_ip}]: firmware must be V3 and >= 3.5.8.1 "
-                f"(found: {version}), please check and update")
+        return (f"{name} [{robot_ip}]：固件须为 V3 且 >= 3.5.8.1"
+                f"（当前：{version}），请检查并升级")
     return None
 
 

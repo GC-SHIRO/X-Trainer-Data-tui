@@ -7,24 +7,25 @@ import copy
 from dataclasses import fields
 from typing import Dict, Optional, Tuple
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static, Switch, TabbedContent, TabPane
 
-from dobot_control.settings import (FIELD_HELP, ROBOT_TYPES, Settings, format_field, parse_field,
+from dobot_control.settings import (FIELD_HELP, FIELD_LABEL, ROBOT_TYPES, Settings, format_field, parse_field,
                                     validate)
 
-SECTIONS = (("collect", "Collect"), ("network", "Network"), ("safety", "Safety"))
+SECTIONS = (("collect", "采集"), ("network", "网络"), ("safety", "安全"))
 
 
 class SettingsScreen(ModalScreen):
     """Dismisses with the new Settings on save, or None on cancel."""
 
     BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
-        Binding("ctrl+s", "save", "Save"),
+        Binding("escape", "cancel", "取消"),
+        Binding("ctrl+s", "save", "保存"),
     ]
 
     DEFAULT_CSS = """
@@ -36,6 +37,7 @@ class SettingsScreen(ModalScreen):
     #dialog TabPane { height: 1fr; padding: 0; }
     .row { height: auto; margin: 0 1; }
     .row Label.name { width: 20; padding: 1 0 0 0; }
+    .row Label.key { color: $text-muted; }
     .row Input, .row Select { width: 30; }
     .row Switch { width: 30; }
     .row Label.help { width: 1fr; padding: 1 0 0 1; color: $text-muted; }
@@ -56,8 +58,8 @@ class SettingsScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            note = ("Session is active: changes are saved now and apply on the next connect."
-                    if self._session_active else "Saved to scripts/dobot_config/dobot_settings.ini")
+            note = ("会话正在运行：现在保存，下次连接时生效。"
+                    if self._session_active else "保存到 scripts/dobot_config/dobot_settings.ini")
             yield Static(note, id="note")
             with TabbedContent():
                 for sec, title in SECTIONS:
@@ -68,9 +70,9 @@ class SettingsScreen(ModalScreen):
                                 yield self._row(sec, f.name, getattr(obj, f.name))
             yield Static("", id="errors")
             with Horizontal(id="buttons"):
-                yield Button("Save", id="save", variant="primary")
-                yield Button("Cancel", id="cancel")
-                yield Button("Defaults (this tab)", id="defaults")
+                yield Button("保存", id="save", variant="primary")
+                yield Button("取消", id="cancel")
+                yield Button("恢复本页默认值", id="defaults")
 
     def _row(self, sec: str, name: str, value) -> Horizontal:
         wid = self._wid(sec, name)
@@ -81,8 +83,10 @@ class SettingsScreen(ModalScreen):
         else:
             placeholder = self._default_save_root if (sec, name) == ("collect", "save_root") else ""
             widget = Input(value=format_field(value), placeholder=placeholder, id=wid)
-        return Horizontal(Label(name, classes="name"), widget,
-                          Label(FIELD_HELP.get((sec, name), ""), classes="help"),
+        help_text = Text(FIELD_HELP.get((sec, name), ""))
+        help_text.append(f"  [{name}]", style="dim")
+        return Horizontal(Label(FIELD_LABEL.get((sec, name), name), classes="name"), widget,
+                          Label(help_text, classes="help"),
                           classes="row", id=f"row-{sec}-{name}")
 
     # ------------------------------------------------------------------ reading the form
@@ -109,7 +113,7 @@ class SettingsScreen(ModalScreen):
                 try:
                     setattr(obj, f.name, parse_field(sec, f.name, w.value))
                 except ValueError as e:
-                    errors[(sec, f.name)] = str(e) or "invalid value"
+                    errors[(sec, f.name)] = str(e) or "取值无效"
         if not errors:
             for sec, name, msg in validate(new):
                 errors[(sec, name)] = msg
@@ -133,12 +137,13 @@ class SettingsScreen(ModalScreen):
         defaults = getattr(Settings(), sec)
         for f in fields(defaults):
             self._set_widget(sec, f.name, getattr(defaults, f.name))
-        self.notify(f"{sec}: defaults restored in the form (not saved yet)")
+        self.notify(f"{dict(SECTIONS)[sec]}：已恢复默认值（尚未保存）")
 
     def action_save(self) -> None:
         new, errors = self.collect_form()
         self.query_one("#errors", Static).update(
-            "\n".join(f"{sec}.{name}: {msg}" for (sec, name), msg in errors.items()))
+            "\n".join(f"{FIELD_LABEL.get((sec, name), name)}（{name}）：{msg}"
+                      for (sec, name), msg in errors.items()))
         if errors:
             self.query_one(TabbedContent).active = f"tab-{next(iter(errors))[0]}"
             return

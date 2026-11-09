@@ -26,13 +26,15 @@ from dobot_control.tui.episodes_screen import EpisodesScreen
 from dobot_control.tui.settings_screen import SettingsScreen
 
 PHASE_STYLE = {
-    "idle": ("IDLE", "bold white on grey30"),
-    "connecting": ("CONNECTING", "bold black on yellow"),
-    "ready": ("READY", "bold black on cyan"),
-    "running": ("RUNNING", "bold black on green"),
-    "stopped": ("STOPPED", "bold white on grey30"),
-    "error": ("ERROR", "bold white on red"),
+    "idle": ("未连接", "bold white on grey30"),
+    "connecting": ("连接中", "bold black on yellow"),
+    "ready": ("就绪", "bold black on cyan"),
+    "running": ("运行中", "bold black on green"),
+    "stopped": ("已停止", "bold white on grey30"),
+    "error": ("出错", "bold white on red"),
 }
+LIGHT_ZH = {"dark": "灭", "red": "红", "yellow": "黄", "green": "绿"}
+LEVEL_ZH = {"info": "信息", "warn": "警告", "error": "错误"}
 LIGHT_STYLE = {"dark": "grey50", "red": "bold red", "yellow": "bold yellow", "green": "bold green"}
 LEVEL_STYLE = {"info": "white", "warn": "yellow", "error": "bold red"}
 
@@ -51,7 +53,7 @@ class Panel(Static):
 
 class CollectorApp(App):
     TITLE = "Dobot X-Trainer"
-    SUB_TITLE = "data collection"
+    SUB_TITLE = "数据采集"
 
     CSS = """
     Screen { layout: vertical; }
@@ -66,21 +68,21 @@ class CollectorApp(App):
     """
 
     BINDINGS = [
-        Binding("c", "connect", "Connect/start"),
-        Binding("r", "toggle_record", "Record on/off"),
-        Binding("s", "stop_session", "Stop session"),
-        Binding("v", "toggle_preview", "Camera view"),
-        Binding("e", "settings", "Settings"),
-        Binding("l", "episodes", "Episodes"),
-        Binding("k", "calibrate", "Calibrate"),
-        Binding("o", "open_dir", "Show save dir", show=False),
-        Binding("q", "quit_app", "Quit"),
+        Binding("c", "connect", "连接"),
+        Binding("r", "toggle_record", "录制"),
+        Binding("s", "stop_session", "停止"),
+        Binding("v", "toggle_preview", "相机窗口"),
+        Binding("e", "settings", "设置"),
+        Binding("l", "episodes", "数据管理"),
+        Binding("k", "calibrate", "标定"),
+        Binding("o", "open_dir", "保存目录", show=False),
+        Binding("q", "quit_app", "退出"),
     ]
     FAKE_BINDINGS = [
-        ("1", "fake_press(0, 0, 0.1)", "LA"),
-        ("2", "fake_press(0, 0, 1.3)", "LA hold"),
-        ("3", "fake_press(1, 0, 0.1)", "RA"),
-        ("4", "fake_press(1, 0, 1.3)", "RA hold"),
+        ("1", "fake_press(0, 0, 0.1)", "左A短"),
+        ("2", "fake_press(0, 0, 1.3)", "左A长"),
+        ("3", "fake_press(1, 0, 0.1)", "右A短"),
+        ("4", "fake_press(1, 0, 1.3)", "右A长"),
         ("5", "fake_press(0, 1, 0.1)", "B"),
     ]
 
@@ -117,23 +119,23 @@ class CollectorApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Vertical(id="top"):
-            yield Panel("Session", id="status")
+            yield Panel("会话", id="status")
             with Horizontal(id="hands"):
-                yield Panel("Left hand", id="hand-left", classes="hand")
-                yield Panel("Right hand", id="hand-right", classes="hand")
+                yield Panel("左手", id="hand-left", classes="hand")
+                yield Panel("右手", id="hand-right", classes="hand")
             with Horizontal():
-                yield Panel("Recording", id="recording")
-                yield Panel("Rates", id="rates")
+                yield Panel("录制", id="recording")
+                yield Panel("频率", id="rates")
         log = RichLog(id="log", wrap=True, markup=False, max_lines=2000)
-        log.border_title = "Events"
+        log.border_title = "事件"
         yield log
         yield Footer()
 
     def on_mount(self) -> None:
-        self.sub_title = "data collection" + ("  [FAKE HARDWARE]" if self.backend == "fake" else "")
+        self.sub_title = "数据采集" + ("  [模拟硬件]" if self.backend == "fake" else "")
         self._write_log(Event(time.time(), "info",
-                              "Press c to connect." + ("" if self.backend == "fake" else
-                                                       " Make sure experiments/launch_nodes.py is running.")))
+                              "按 c 连接。" + ("" if self.backend == "fake" else
+                                                "请先在另一个终端运行 experiments/launch_nodes.py。")))
         self.refresh_view()
         self.set_interval(0.1, self.refresh_view)
         if self.auto_connect:
@@ -143,7 +145,7 @@ class CollectorApp(App):
     def _write_log(self, ev: Event) -> None:
         ts = datetime.datetime.fromtimestamp(ev.time).strftime("%H:%M:%S")
         line = Text(f"{ts} ", style="grey50")
-        line.append(f"{ev.level.upper():5} ", style=LEVEL_STYLE.get(ev.level, "white"))
+        line.append(f"{LEVEL_ZH.get(ev.level, ev.level)} ", style=LEVEL_STYLE.get(ev.level, "white"))
         line.append(ev.message, style=LEVEL_STYLE.get(ev.level, "white"))
         self.query_one("#log", RichLog).write(line)
 
@@ -166,38 +168,39 @@ class CollectorApp(App):
 
         status = Text()
         status.append(f" {label} ", style=style)
-        status.append(f"  backend: {self.backend}   robot: {(s and s.robot_type) or '-'}   "
-                      f"project: {c.project_name}\n")
-        status.append(f"save dir: {save_dir}", style="grey70")
+        backend = "模拟硬件" if self.backend == "fake" else "真机"
+        status.append(f"  后端：{backend}   机型：{(s and s.robot_type) or '-'}   "
+                      f"项目：{c.project_name}\n")
+        status.append(f"保存目录：{save_dir}", style="grey70")
         if s and s.error:
-            status.append(f"\nerror: {s.error}", style="bold red")
+            status.append(f"\n错误：{s.error}", style="bold red")
         self.query_one("#status", Panel).update(status)
 
         for i, side in enumerate(("left", "right")):
             t = Text()
             unlocked = bool(s and s.unlocked[i])
             servo = bool(s and s.servo[i])
-            t.append("lock  ")
-            t.append_text(_flag(unlocked, "UNLOCKED", "locked", "bold black on yellow"))
-            t.append("\nservo ")
-            t.append_text(_flag(servo, "SERVO", "off", "bold black on green"))
+            t.append("锁定 ")
+            t.append_text(_flag(unlocked, "已解锁", "已锁定", "bold black on yellow"))
+            t.append("\n同步 ")
+            t.append_text(_flag(servo, "同步中", "未同步", "bold black on green"))
             self.query_one(f"#hand-{side}", Panel).update(t)
 
         t = Text()
         recording = bool(s and s.recording)
-        t.append_text(_flag(recording, "● REC", "not recording", "bold white on red"))
+        t.append_text(_flag(recording, "● 录制中", "未录制", "bold white on red"))
         light = s.light if s else "dark"
-        t.append("   light: ")
-        t.append(f"■ {light}", style=LIGHT_STYLE.get(light, "white"))
-        t.append(f"\nepisode: {(s and s.episode) or '-'}   frames: {s.frames if s else 0}"
-                 f"\nepisodes this session: {s.episodes_recorded if s else 0}")
+        t.append("   指示灯：")
+        t.append(f"■ {LIGHT_ZH.get(light, light)}", style=LIGHT_STYLE.get(light, "white"))
+        t.append(f"\nepisode：{(s and s.episode) or '-'}   帧数：{s.frames if s else 0}"
+                 f"\n本次会话已录：{s.episodes_recorded if s else 0} 条")
         self.query_one("#recording", Panel).update(t)
 
         t = Text()
         hz = s.loop_hz if s else 0.0
-        t.append(f"control loop: {hz:6.1f} Hz\n")
+        t.append(f"控制循环：{hz:6.1f} Hz\n")
         fps = s.camera_fps if s else (0.0, 0.0, 0.0)
-        t.append("cameras:     ")
+        t.append("相机：    ")
         for name, f in zip(("top", "left", "right"), fps):
             t.append(f"{name} ")
             t.append(f"{f:.0f}", style="green" if f > 20 else ("yellow" if f > 0 else "grey50"))
@@ -208,7 +211,7 @@ class CollectorApp(App):
     # ------------------------------------------------------------------ actions
     def action_connect(self) -> None:
         if self.session and self.session.state.phase in ("connecting", "ready", "running"):
-            self.notify("Session already active", severity="warning")
+            self.notify("会话已在运行", severity="warning")
             return
         self.session = CollectorSession(self.settings, backend=self.backend)
         self.session.add_listener(self._events.put)
@@ -226,12 +229,12 @@ class CollectorApp(App):
     def action_toggle_record(self) -> None:
         s = self.session
         if not s or s.state.phase != "running":
-            self.notify("Not running", severity="warning")
+            self.notify("会话未运行", severity="warning")
             return
         if s.state.recording:
             s.stop_recording()
         elif not s.start_recording():
-            self.notify("Recording needs at least one hand in servo (long-press A)", severity="warning")
+            self.notify("至少一只手在同步时才能录制（长按 A）", severity="warning")
 
     def action_stop_session(self) -> None:
         if self.session and self.session.state.phase in ("connecting", "ready", "running"):
@@ -252,12 +255,12 @@ class CollectorApp(App):
         try:
             save_settings(new)
         except Exception as e:
-            self.notify(f"Could not write the ini: {e}", severity="error")
+            self.notify(f"写入 ini 失败：{e}", severity="error")
             return
         self.settings = new  # a running session keeps its own settings object
         active = self.session and self.session.state.phase in ("connecting", "ready", "running")
-        self.notify("Settings saved" + (" - they apply on the next connect" if active else ""))
-        self._events.put(Event(time.time(), "info", "Settings saved to the ini"))
+        self.notify("设置已保存" + ("，下次连接时生效" if active else ""))
+        self._events.put(Event(time.time(), "info", "设置已写入 ini"))
 
     # ------------------------------------------------------------------ camera window
     def _sync_preview(self, phase: str) -> None:
@@ -271,15 +274,15 @@ class CollectorApp(App):
     def _show_preview(self) -> None:
         s = self.session
         if not s or s.state.phase != "running":
-            self.notify("Connect first (c)", severity="warning")
+            self.notify("请先连接（c）", severity="warning")
             return
         try:
             get_preview().show(s.latest_images, on_close=self._preview_closed)
         except RuntimeError as e:
-            self.notify(f"Camera window unavailable: {e}", severity="warning")
+            self.notify(f"无法打开相机窗口：{e}", severity="warning")
             return
         self._preview_owner = s
-        self._events.put(Event(time.time(), "info", "Camera window opened (v to close)"))
+        self._events.put(Event(time.time(), "info", "相机窗口已打开（按 v 关闭）"))
 
     def _hide_preview(self) -> None:
         if self._preview_owner is not None:
@@ -290,12 +293,12 @@ class CollectorApp(App):
         # preview thread: the window was closed with its X button or failed
         self._preview_owner = None
         self._events.put(Event(time.time(), "warn" if error else "info",
-                               f"Camera window failed: {error}" if error else "Camera window closed"))
+                               f"相机窗口出错：{error}" if error else "相机窗口已关闭"))
 
     def action_toggle_preview(self) -> None:
         if self._preview_owner is not None and get_preview().visible:
             self._hide_preview()
-            self._events.put(Event(time.time(), "info", "Camera window closed"))
+            self._events.put(Event(time.time(), "info", "相机窗口已关闭"))
         else:
             self._show_preview()
 
@@ -315,7 +318,7 @@ class CollectorApp(App):
 
     def action_calibrate(self) -> None:
         if self._session_active():
-            self.notify("Stop the session first (s): calibration needs the hands and cameras",
+            self.notify("请先停止会话（s）：标定需要占用主手和相机",
                         severity="warning")
             return
         hooks = None
@@ -333,7 +336,7 @@ class CollectorApp(App):
         s = self.session
         if s and s.state.recording and time.time() - self._quit_armed > 3:
             self._quit_armed = time.time()
-            self.notify("Recording in progress - press q again to stop and quit", severity="warning")
+            self.notify("正在录制，再按一次 q 停止并退出", severity="warning")
             return
         self._hide_preview()
         if s:

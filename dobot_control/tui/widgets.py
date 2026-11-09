@@ -9,7 +9,7 @@ from textual.widgets import Button, Static
 class ConfirmScreen(ModalScreen):
     """Yes/no dialog; dismisses with True or False."""
 
-    BINDINGS = [Binding("escape", "no", "No"), Binding("n", "no", "No"), Binding("y", "yes", "Yes")]
+    BINDINGS = [Binding("escape", "no", "否"), Binding("n", "no", "否"), Binding("y", "yes", "是")]
     DEFAULT_CSS = """
     ConfirmScreen { align: center middle; }
     ConfirmScreen > Vertical { width: 70; max-width: 100%; height: auto; border: thick $warning;
@@ -19,7 +19,7 @@ class ConfirmScreen(ModalScreen):
     ConfirmScreen Button { margin-right: 1; }
     """
 
-    def __init__(self, message: str, yes_label: str = "Yes (y)", no_label: str = "No (n)"):
+    def __init__(self, message: str, yes_label: str = "是 (y)", no_label: str = "否 (n)"):
         super().__init__()
         self._message = message
         self._yes = yes_label

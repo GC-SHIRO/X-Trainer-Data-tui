@@ -69,17 +69,18 @@ def check_pose_protection(positions: Dict, vel: Dict, servo_on: Tuple[bool, bool
     warnings = []
     positions_mm = {k: v * 1000 for k, v in positions.items()}
     for i, side in enumerate(("left", "right")):
+        side_zh = "左" if side == "left" else "右"
         if not servo_on[i]:
             continue
         vz = [vel[f"{side}_left"][2], vel[f"{side}_right"][2]]
         if min(vz) < -cfg.max_z_down_speed:
-            warnings.append(f"The {side} robot TCP is moving down too fast ({min(vz):.2f} m/s)")
+            warnings.append(f"{side_zh}臂末端下降过快（{min(vz):.2f} m/s）")
         x_range = cfg.x_range_left if side == "left" else cfg.x_range_right
         z_min = cfg.z_min_left if side == "left" else cfg.z_min_right
         for paw in ("left", "right"):
             if not _in_zone(positions_mm[f"{side}_{paw}"], x_range, cfg.y_range, z_min):
-                warnings.append(f"The {side} arm is out of the safe zone "
-                                f"(tip {np.round(positions_mm[f'{side}_{paw}'], 1)} mm)")
+                warnings.append(f"{side_zh}臂超出安全工作空间"
+                                f"（夹爪尖 {np.round(positions_mm[f'{side}_{paw}'], 1)} mm）")
                 break
     return warnings
 
@@ -87,9 +88,9 @@ def check_pose_protection(positions: Dict, vel: Dict, servo_on: Tuple[bool, bool
 def check_joint_safety(action) -> List[str]:
     warnings = []
     if not action[2] < 0:
-        warnings.append(f"Left J3 out of the safe range ({action[2]:.3f} rad, must be < 0)")
+        warnings.append(f"左臂 J3 超出安全范围（{action[2]:.3f} rad，须 < 0）")
     if not action[9] > 0:
-        warnings.append(f"Right J3 out of the safe range ({action[9]:.3f} rad, must be > 0)")
+        warnings.append(f"右臂 J3 超出安全范围（{action[9]:.3f} rad，须 > 0）")
     return warnings
 
 

@@ -32,6 +32,7 @@ from dobot_control.safety import check_command
 CAMERA_NAMES = ("top", "left", "right")
 IMAGE_DIRS = ("topImg", "leftImg", "rightImg")
 HANDS = ("left", "right")
+HAND_ZH = ("左手", "右手")
 
 
 class CollectorError(RuntimeError):
@@ -109,7 +110,7 @@ class CameraWorker:
                     self._frame = frame
                 self._times.append(time.time())
         except Exception as e:  # camera unplugged, librealsense timeout, ...
-            self.error = f"{self.name} camera: {e}"
+            self.error = f"{self.name} 相机：{e}"
 
     def latest(self) -> np.ndarray:
         with self._lock:
@@ -197,13 +198,13 @@ class ButtonMonitor:
                         if held < 0.5:
                             self.keys_press_count[i, 0] += 1
                             self.what_to_do[i, 0] = self.keys_press_count[i, 0] % 2
-                            self._log("info", f"Button A [{HANDS[i]}]: "
-                                              f"{'unlock' if self.what_to_do[i, 0] else 'lock'}")
+                            self._log("info", f"{HAND_ZH[i]} A 键："
+                                              f"{'解锁' if self.what_to_do[i, 0] else '锁定'}")
                         elif held > 1:
                             self.keys_press_count[i, 1] += 1
                             self.what_to_do[i, 1] = self.keys_press_count[i, 1] % 2
-                            self._log("info", f"Button A [{HANDS[i]}]: "
-                                              f"{'servo' if self.what_to_do[i, 1] else 'stop servo'}")
+                            self._log("info", f"{HAND_ZH[i]} A 键："
+                                              f"{'开始同步' if self.what_to_do[i, 1] else '停止同步'}")
                 # button B (either hand): toggle recording while at least one hand servos
                 for i in range(2):
                     if dev_keys[i, 1] == -1:
@@ -294,7 +295,7 @@ class CollectorSession:
             self._fail(str(e), light=False)
             raise
         self._set(phase="ready")
-        self.log("info", "Ready. Long-press A to start servo, press B to record.")
+        self.log("info", "就绪：长按 A 开始同步，按 B 开始录制")
 
     def _connect(self) -> None:
         net = self.settings.network
@@ -316,36 +317,36 @@ class CollectorSession:
             from dobot_control.robots.robot_node import ZMQClientRobot
 
             camera_ids = load_ini_data_camera()
-            self.log("info", "Opening cameras...")
+            self.log("info", "正在打开相机...")
             cams = [RealSenseCamera(flip=True, device_id=camera_ids["top"]),
                     RealSenseCamera(flip=False, device_id=camera_ids["left"]),
                     RealSenseCamera(flip=True, device_id=camera_ids["right"])]
-            self.log("info", "Opening master hands...")
+            self.log("info", "正在打开主手...")
             _, hands_dict = load_ini_data_hands()
             self.agent = BimanualAgent(DobotAgent("LEFT", hands_dict["HAND_LEFT"]),
                                        DobotAgent("RIGHT", hands_dict["HAND_RIGHT"]))
-            self.log("info", f"Connecting to robot server {net.zmq_host}:{net.zmq_port}...")
+            self.log("info", f"正在连接从臂服务 {net.zmq_host}:{net.zmq_port}...")
             robot_client = ZMQClientRobot(port=net.zmq_port, host=net.zmq_host)
             if net.check_firmware:
-                for ip, name in ((net.left_ip, "Left arm"), (net.right_ip, "Right arm")):
+                for ip, name in ((net.left_ip, "左臂"), (net.right_ip, "右臂")):
                     err = firmware_error(ip, name)
                     if err:
                         raise CollectorError(err)
             robot_type = get_robot_type(net.left_ip) if net.robot_type == "auto" else net.robot_type
             if robot_type is None:
-                raise CollectorError(f"Failed to obtain the robot type from {net.left_ip}")
+                raise CollectorError(f"无法从 {net.left_ip} 获取机型")
 
         self.cameras = [CameraWorker(cam, i, self.settings.collect.top_crop) for i, cam in enumerate(cams)]
         for c in self.cameras:
             c.start()
         time.sleep(2)  # let the camera threads fill their first frames (as before)
-        self.log("info", "Camera threads started")
+        self.log("info", "相机线程已启动")
 
         from dobot_control.env import RobotEnv
         self.env = RobotEnv(robot_client)
         for do in (1, 2, 3):
             self.env.set_do_status([do, 0])
-        self.log("info", f"Robot type: {robot_type}. Moving arms to the home pose...")
+        self.log("info", f"机型：{robot_type}，从臂正在回到初始位...")
         robot_pose_init(self.env)
         self._set(robot_type=robot_type, light="dark")
 
@@ -355,7 +356,7 @@ class CollectorSession:
     def start(self) -> None:
         """Run the control loop in a background thread."""
         if self.state.phase != "ready":
-            raise CollectorError(f"cannot start from phase {self.state.phase!r}")
+            raise CollectorError(f"当前状态 {self.state.phase!r} 下无法启动")
         self._stop.clear()
         self._loop_thread = threading.Thread(target=self.run, name="collector-loop", daemon=True)
         self._loop_thread.start()
@@ -371,9 +372,9 @@ class CollectorSession:
             return
         if self.state.recording:
             self._set(episodes_recorded=self.state.episodes_recorded + 1)
-            self.log("info", f"Stopped episode {self.state.episode} ({self.state.frames} frames)")
+            self.log("info", f"已停止录制 {self.state.episode}（{self.state.frames} 帧）")
         self._set(phase="stopped", recording=False)
-        self.log("info", "Session stopped")
+        self.log("info", "会话已停止")
 
     def stop(self) -> None:
         self._stop.set()
@@ -429,9 +430,9 @@ class CollectorSession:
         tic = time.time()
         for c in self.cameras:
             if c.error or not c.alive():
-                raise CollectorError(c.error or f"{c.name} camera thread died, please check the camera")
+                raise CollectorError(c.error or f"{c.name} 相机线程退出，请检查相机")
         if self.buttons.falling:
-            raise CollectorError("Master-hand fall sensor triggered")
+            raise CollectorError("主手跌落传感器触发")
 
         agent, env = self.agent, self.env
         what_to_do = self.buttons.snapshot()
@@ -445,7 +446,7 @@ class CollectorSession:
 
         # button A long press: a hand started servoing -> approach the leader pose first
         if dev[0, 1] == 1 or dev[1, 1] == 1:
-            self.log("info", "Dynamic approach to the master-hand pose")
+            self.log("info", "从臂正在插值靠近主手姿态")
             for i in range(2):
                 if what_to_do[i, 1]:
                     agent.set_torque(i, True)
@@ -453,8 +454,8 @@ class CollectorSession:
             try:
                 self._last_action = dynamic_approach(env, agent, self._flag_in)
             except AssertionError:
-                raise CollectorError("Master hand and follower poses differ too much; "
-                                     "move the master hand closer and retry")
+                raise CollectorError("主手与从臂姿态相差过大，"
+                                     "请把主手摆到接近从臂的姿态后重试")
             for i in range(2):
                 if what_to_do[i, 0] and what_to_do[i, 1]:
                     agent.set_torque(i, False)
@@ -471,17 +472,17 @@ class CollectorSession:
 
         # recording transitions (bookkeeping only; the light is switched inside the servo branch)
         if dev[0, 2] == 1:
-            self.log("info", f"Recording episode {self.state.episode}")
+            self.log("info", f"开始录制 {self.state.episode}")
         elif dev[0, 2] == -1:
             self._set(episodes_recorded=self.state.episodes_recorded + 1)
-            self.log("info", f"Stopped episode {self.state.episode} ({self.state.frames} frames)")
+            self.log("info", f"已停止录制 {self.state.episode}（{self.state.frames} 帧）")
 
         if (what_to_do[0, 1] or what_to_do[1, 1]) and self._start_servo:
             action = agent.act({})
             ok, action = servo_action_check(action, self._last_action, self._flag_in,
                                             self.settings.safety.servo_step_limit)
             if not ok:
-                raise CollectorError("Servo action jump is too big (see console for joint details)")
+                raise CollectorError("关节跳变过大（关节详情见终端输出）")
 
             if self._safe_limit < 1:
                 self._safe_limit += 1
@@ -491,7 +492,7 @@ class CollectorSession:
                 if warnings:
                     for w in warnings:
                         self.log("warn", w)
-                    raise CollectorError("Safety protection: " + "; ".join(warnings))
+                    raise CollectorError("安全保护：" + "；".join(warnings))
 
             # button B: recording indicator
             if dev[0, 2] == 1:

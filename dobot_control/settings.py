@@ -75,7 +75,7 @@ def _parse(raw: str, default):
     if isinstance(default, tuple):
         parts = [x for x in raw.split(",")]
         if len(parts) != len(default):
-            raise ValueError(f"expected {len(default)} comma-separated values, got {len(parts)}")
+            raise ValueError(f"需要 {len(default)} 个逗号分隔的值，实际 {len(parts)} 个")
         return tuple(type(d)(x) for d, x in zip(default, parts))
     return raw.strip()
 
@@ -111,29 +111,52 @@ def load_settings() -> Settings:
 
 ROBOT_TYPES = ("auto", "Nova 2", "Nova 5")
 
-# One-line descriptions shown by the settings UIs, keyed by (section attr, field).
+# Labels and one-line descriptions shown by the settings UIs, keyed by (section attr, field).
+FIELD_LABEL = {
+    ("collect", "save_root"): "数据根目录",
+    ("collect", "project_name"): "项目名",
+    ("collect", "show_img"): "相机窗口",
+    ("collect", "jpeg_quality"): "JPEG 质量",
+    ("collect", "top_crop"): "顶部相机裁剪",
+    ("collect", "control_hz"): "控制频率",
+    ("network", "left_ip"): "左臂 IP",
+    ("network", "right_ip"): "右臂 IP",
+    ("network", "zmq_host"): "从臂服务地址",
+    ("network", "zmq_port"): "从臂服务端口",
+    ("network", "check_firmware"): "检查固件",
+    ("network", "robot_type"): "机型",
+    ("safety", "enabled"): "启用安全检查",
+    ("safety", "x_range_left"): "左臂 X 范围",
+    ("safety", "x_range_right"): "右臂 X 范围",
+    ("safety", "y_range"): "Y 范围",
+    ("safety", "z_min_left"): "左臂 Z 下限",
+    ("safety", "z_min_right"): "右臂 Z 下限",
+    ("safety", "max_z_down_speed"): "最大下降速度",
+    ("safety", "servo_step_limit"): "单步关节跳变上限",
+    ("safety", "check_j3"): "检查 J3",
+}
 FIELD_HELP = {
-    ("collect", "save_root"): "dataset root; empty = <repo parent>/datasets",
-    ("collect", "project_name"): "data goes to <save_root>/<project>/collect_data",
-    ("collect", "show_img"): "open the camera window on connect (TUI: v toggles)",
-    ("collect", "jpeg_quality"): "JPEG quality 1-100",
-    ("collect", "top_crop"): "top camera crop fractions: top, bottom, left, right",
-    ("collect", "control_hz"): "0 = as fast as possible (original behaviour)",
-    ("network", "left_ip"): "left arm controller IP",
-    ("network", "right_ip"): "right arm controller IP",
-    ("network", "zmq_host"): "robot server (launch_nodes.py) host",
-    ("network", "zmq_port"): "robot server port",
-    ("network", "check_firmware"): "refuse controllers with firmware < V3.5.8.1",
-    ("network", "robot_type"): "auto = ask the left controller",
-    ("safety", "enabled"): "workspace / Z speed / J3 checks (jump check always on)",
-    ("safety", "x_range_left"): "left gripper-tip X min, max (mm)",
-    ("safety", "x_range_right"): "right gripper-tip X min, max (mm)",
-    ("safety", "y_range"): "gripper-tip Y min, max (mm)",
-    ("safety", "z_min_left"): "left gripper-tip Z must stay above (mm)",
-    ("safety", "z_min_right"): "right gripper-tip Z must stay above (mm)",
-    ("safety", "max_z_down_speed"): "max downward TCP speed (m/s)",
-    ("safety", "servo_step_limit"): "max joint jump between leader commands (rad)",
-    ("safety", "check_j3"): "stop when J3 becomes positive",
+    ("collect", "save_root"): "留空 = <仓库上一级>/datasets",
+    ("collect", "project_name"): "数据存到 <根目录>/<项目名>/collect_data",
+    ("collect", "show_img"): "连接后自动弹出相机窗口（TUI 中按 v 切换）",
+    ("collect", "jpeg_quality"): "1-100",
+    ("collect", "top_crop"): "按比例裁掉：上, 下, 左, 右",
+    ("collect", "control_hz"): "0 = 不限速（与原版一致）",
+    ("network", "left_ip"): "左臂控制器 IP",
+    ("network", "right_ip"): "右臂控制器 IP",
+    ("network", "zmq_host"): "launch_nodes.py 所在主机",
+    ("network", "zmq_port"): "launch_nodes.py 端口",
+    ("network", "check_firmware"): "固件低于 V3.5.8.1 时拒绝连接",
+    ("network", "robot_type"): "auto = 向左臂控制器查询",
+    ("safety", "enabled"): "工作空间 / 下降速度 / J3 检查（关节跳变检查始终开启）",
+    ("safety", "x_range_left"): "左夹爪尖 X 最小, 最大（mm）",
+    ("safety", "x_range_right"): "右夹爪尖 X 最小, 最大（mm）",
+    ("safety", "y_range"): "夹爪尖 Y 最小, 最大（mm）",
+    ("safety", "z_min_left"): "左夹爪尖 Z 须高于（mm）",
+    ("safety", "z_min_right"): "右夹爪尖 Z 须高于（mm）",
+    ("safety", "max_z_down_speed"): "末端最大下降速度（m/s）",
+    ("safety", "servo_step_limit"): "相邻两次主手指令的最大关节跳变（rad）",
+    ("safety", "check_j3"): "J3 变号时停止",
 }
 
 
@@ -156,28 +179,28 @@ def validate(settings: Settings) -> list:
         errs.append((sec, f, msg))
 
     if not c.project_name or any(ch in c.project_name for ch in "/\\:"):
-        bad("collect", "project_name", "must be non-empty and contain no / \\ :")
+        bad("collect", "project_name", "不能为空，且不能包含 / \\ :")
     if not 1 <= c.jpeg_quality <= 100:
-        bad("collect", "jpeg_quality", "must be 1-100")
+        bad("collect", "jpeg_quality", "须在 1-100 之间")
     if any(not 0 <= v < 0.5 for v in c.top_crop):
-        bad("collect", "top_crop", "each value must be in [0, 0.5)")
+        bad("collect", "top_crop", "每个值须在 [0, 0.5) 之间")
     if c.control_hz < 0:
-        bad("collect", "control_hz", "must be >= 0")
+        bad("collect", "control_hz", "须 >= 0")
     if not 1 <= n.zmq_port <= 65535:
-        bad("network", "zmq_port", "must be 1-65535")
+        bad("network", "zmq_port", "须在 1-65535 之间")
     for f in ("left_ip", "right_ip", "zmq_host"):
         if not getattr(n, f):
-            bad("network", f, "must not be empty")
+            bad("network", f, "不能为空")
     if n.robot_type not in ROBOT_TYPES:
-        bad("network", "robot_type", f"must be one of {', '.join(ROBOT_TYPES)}")
+        bad("network", "robot_type", f"须为 {', '.join(ROBOT_TYPES)} 之一")
     for f in ("x_range_left", "x_range_right", "y_range"):
         lo, hi = getattr(s, f)
         if lo >= hi:
-            bad("safety", f, "min must be < max")
+            bad("safety", f, "最小值须小于最大值")
     if s.max_z_down_speed <= 0:
-        bad("safety", "max_z_down_speed", "must be > 0")
+        bad("safety", "max_z_down_speed", "须 > 0")
     if s.servo_step_limit <= 0:
-        bad("safety", "servo_step_limit", "must be > 0")
+        bad("safety", "servo_step_limit", "须 > 0")
     return errs
 
 

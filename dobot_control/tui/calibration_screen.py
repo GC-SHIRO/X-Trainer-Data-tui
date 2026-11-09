@@ -13,6 +13,7 @@ import time
 from typing import Dict, Optional
 
 import numpy as np
+from rich.cells import cell_len
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
@@ -28,10 +29,16 @@ from dobot_control.tui.widgets import ConfirmScreen
 
 LEVEL_STYLE = {"info": "white", "warn": "yellow", "error": "bold red"}
 OFFSET_WARN_RAD = 0.5   # a bigger change usually means the hand was not in the start pose
+NOT_FOUND = "未找到"
+
+
+def _pad(text: str, width: int) -> str:
+    """Left-align to a terminal cell width (CJK characters take two cells)."""
+    return text + " " * max(1, width - cell_len(text))
 
 
 class CalibrationScreen(Screen):
-    BINDINGS = [Binding("escape", "back", "Back")]
+    BINDINGS = [Binding("escape", "back", "返回")]
     DEFAULT_CSS = """
     CalibrationScreen TabbedContent { height: 1fr; }
     CalibrationScreen ContentSwitcher { height: 1fr; }
@@ -60,55 +67,55 @@ class CalibrationScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         with TabbedContent(id="cal-tabs"):
-            with TabPane("Ports", id="tab-ports"):
+            with TabPane("串口", id="tab-ports"):
                 with VerticalScroll():
-                    yield Static("Plug in both master hands and both grippers, then scan. Hands are probed "
-                                 "first (Dynamixel, 2M / 1M baud), grippers on the remaining ports.",
+                    yield Static("插好两只主手和两个夹爪后扫描。先探测主手（Dynamixel，2M / 1M 波特率），"
+                                 "再在剩下的串口里找夹爪。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
-                        yield Button("Scan ports", id="ports-scan", variant="primary")
-                        yield Button("Save ports", id="ports-save", disabled=True)
+                        yield Button("扫描串口", id="ports-scan", variant="primary")
+                        yield Button("保存串口", id="ports-save", disabled=True)
                     yield Static(self._ports_text(), id="ports-result", classes="result")
-            with TabPane("Offsets", id="tab-offsets"):
+            with TabPane("零位", id="tab-offsets"):
                 with VerticalScroll():
-                    yield Static("Hold BOTH master hands in the start pose (start_joints in the ini, the same "
-                                 "pose as the arms' home) with the trigger released, then read.",
+                    yield Static("把两只主手都摆到初始姿态（ini 里的 start_joints，与从臂初始位相同），"
+                                 "松开扳机，然后读取。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
-                        yield Button("Read offsets", id="offsets-read", variant="primary")
-                        yield Button("Save offsets", id="offsets-save", disabled=True)
+                        yield Button("读取零位", id="offsets-read", variant="primary")
+                        yield Button("保存零位", id="offsets-save", disabled=True)
                     yield Static("", id="offsets-result", classes="result")
-            with TabPane("Hand check", id="tab-hands"):
+            with TabPane("手柄检查", id="tab-hands"):
                 with VerticalScroll():
-                    yield Static("Short-press A on a hand to unlock it (torque off, free to move) and again to "
-                                 "lock it. Use this to adjust the handles; angles are after calibration.",
+                    yield Static("短按主手 A 键解锁（关闭力矩，可自由转动），再按一次锁定。"
+                                 "用来调整手柄；显示的是标定后的角度。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
-                        yield Button("Start", id="hands-start", variant="primary")
-                        yield Button("Stop", id="hands-stop", disabled=True)
+                        yield Button("开始", id="hands-start", variant="primary")
+                        yield Button("停止", id="hands-stop", disabled=True)
                     yield Static("", id="hands-result", classes="result")
-            with TabPane("Cameras", id="tab-cameras"):
+            with TabPane("相机", id="tab-cameras"):
                 with VerticalScroll():
-                    yield Static("Detect connected RealSense cameras (they are reset, takes a few seconds) and "
-                                 "assign serials to top / left / right. Close any program using them first.",
+                    yield Static("检测已连接的 RealSense 相机（会重置相机，需要几秒），把序列号分配给 "
+                                 "top / left / right。检测前先关闭其他占用相机的程序。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
-                        yield Button("Detect", id="cams-detect", variant="primary")
-                        yield Button("Save cameras", id="cams-save", disabled=True)
-                        yield Button("Camera view", id="cams-view")
+                        yield Button("检测", id="cams-detect", variant="primary")
+                        yield Button("保存相机", id="cams-save", disabled=True)
+                        yield Button("相机窗口", id="cams-view")
                     yield Static("", id="cams-result", classes="result")
                     with Vertical(id="cams-assign"):
                         for k in cal.CAMERA_KEYS:
                             with Horizontal(classes="cam-row"):
                                 yield Label(k)
-                                yield Select([], id=f"cam-{k}", prompt="(detect first)")
+                                yield Select([], id=f"cam-{k}", prompt="（请先检测）")
         log = RichLog(id="cal-log", wrap=True, markup=False, max_lines=1000)
-        log.border_title = "Log"
+        log.border_title = "日志"
         yield log
         yield Footer()
 
     def on_mount(self) -> None:
-        self.sub_title = "calibration" + ("" if self.allow_write else "  [FAKE - dry run, ini not written]")
+        self.sub_title = "标定" + ("" if self.allow_write else "  [模拟硬件：演示模式，不写 ini]")
         self.set_interval(0.1, self._refresh_hands)
 
     # ------------------------------------------------------------------ helpers
@@ -130,8 +137,8 @@ class CalibrationScreen(Screen):
     def _write_guard(self, what: str) -> bool:
         if self.allow_write:
             return True
-        self.notify(f"Fake backend: {what} not written (dry run)", severity="warning")
-        self.cal_log("warn", f"Dry run: {what} not written to the ini")
+        self.notify(f"模拟硬件：{what}未写入（演示模式）", severity="warning")
+        self.cal_log("warn", f"演示模式：{what}未写入 ini")
         return False
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -160,28 +167,28 @@ class CalibrationScreen(Screen):
         _, grippers = load_ini_data_gripper()
         r = self.port_result
         t = Text()
-        t.append(f"{'device':<16}{'current ini':<26}{'scan result'}\n", style="bold")
+        t.append(_pad("设备", 16) + _pad("ini 当前值", 26) + "扫描结果\n", style="bold")
         for s in cal.HAND_SECTIONS:
             cur = f"{hands[s].port} @ {hands[s].baud_rate}"
-            new = (f"{r.hands[s][0]} @ {r.hands[s][1]}" if s in r.hands else "NOT FOUND") if r else "-"
+            new = (f"{r.hands[s][0]} @ {r.hands[s][1]}" if s in r.hands else NOT_FOUND) if r else "-"
             t.append(f"{s:<16}{cur:<26}")
-            t.append(new + "\n", style="red" if new == "NOT FOUND" else ("green" if r else ""))
+            t.append(new + "\n", style="red" if new == NOT_FOUND else ("green" if r else ""))
         for s in cal.GRIPPER_SECTIONS:
-            new = (r.grippers.get(s, "NOT FOUND")) if r else "-"
+            new = (r.grippers.get(s, NOT_FOUND)) if r else "-"
             t.append(f"{s:<16}{grippers[s].port:<26}")
-            t.append(new + "\n", style="red" if new == "NOT FOUND" else ("green" if r else ""))
+            t.append(new + "\n", style="red" if new == NOT_FOUND else ("green" if r else ""))
         if r:
             if r.leftover:
-                t.append(f"unassigned ports: {', '.join(r.leftover)}\n", style="yellow")
+                t.append(f"未分配的串口：{', '.join(r.leftover)}\n", style="yellow")
             for e in r.errors:
                 t.append(f"{e}\n", style="red")
             if r.complete:
-                t.append("All four devices found.", style="green")
+                t.append("四个设备全部找到。", style="green")
         return t
 
     def _scan_ports(self) -> None:
         self.query_one("#ports-scan", Button).disabled = True
-        self.cal_log("info", "Scanning serial ports ...")
+        self.cal_log("info", "正在扫描串口 ...")
         self._scan_ports_worker()
 
     @work(thread=True, group="ports")
@@ -189,7 +196,7 @@ class CalibrationScreen(Screen):
         try:
             res = cal.find_ports(log=self.cal_log, **self.hooks.get("find_ports", {}))
         except Exception as e:
-            self.cal_log("error", f"Port scan failed: {e}")
+            self.cal_log("error", f"串口扫描失败：{e}")
             res = None
         self._ui(self._ports_done, res)
 
@@ -203,26 +210,26 @@ class CalibrationScreen(Screen):
 
     def _save_ports(self) -> None:
         r = self.port_result
-        if not r or not self._write_guard("ports"):
+        if not r or not self._write_guard("串口"):
             return
 
         def done(yes: bool) -> None:
             if yes:
                 cal.save_ports(r)
-                self.cal_log("info", "Ports saved to the ini")
-                self.notify("Ports saved")
+                self.cal_log("info", "串口已写入 ini")
+                self.notify("串口已保存")
                 self.query_one("#ports-result", Static).update(self._ports_text())
 
         if r.complete:
             done(True)
         else:
-            self.app.push_screen(ConfirmScreen("Not every device was found. Save only the ports that were "
-                                               "found (the others keep their current entry)?"), done)
+            self.app.push_screen(ConfirmScreen("没有找全所有设备。只保存找到的串口吗？"
+                                               "（没找到的保持 ini 原值）"), done)
 
     # ------------------------------------------------------------------ offsets
     def _read_offsets(self) -> None:
         self.query_one("#offsets-read", Button).disabled = True
-        self.cal_log("info", "Reading master-hand joints ...")
+        self.cal_log("info", "正在读取主手关节 ...")
         self._read_offsets_worker()
 
     @work(thread=True, group="offsets")
@@ -230,7 +237,7 @@ class CalibrationScreen(Screen):
         try:
             res = cal.read_offsets(log=self.cal_log, **self.hooks.get("read_offsets", {}))
         except Exception as e:
-            self.cal_log("error", f"Reading offsets failed: {e} (check the ports first)")
+            self.cal_log("error", f"读取零位失败：{e}（请先检查串口）")
             res = None
         self._ui(self._offsets_done, res)
 
@@ -242,33 +249,31 @@ class CalibrationScreen(Screen):
         t = Text()
         for s, r in res.items():
             t.append(f"{s}\n", style="bold")
-            t.append(f"  raw joints (deg) {np.round(np.rad2deg(r.raw_joints), 1).tolist()}\n")
-            t.append(f"  offsets  now     {r.old_offsets}\n")
-            t.append(f"           new     {r.offsets}\n", style="green")
+            t.append(f"  原始关节角（度） {np.round(np.rad2deg(r.raw_joints), 1).tolist()}\n")
+            t.append(f"  零位  当前 {r.old_offsets}\n")
+            t.append(f"        新值 {r.offsets}\n", style="green")
             change = r.max_change
-            t.append(f"           max change {change:.2f} rad\n",
+            t.append(f"        最大变化 {change:.2f} rad\n",
                      style="bold yellow" if change > OFFSET_WARN_RAD else "grey70")
-            t.append(f"  gripper  now {r.old_gripper_config}  new {r.gripper_config}\n")
+            t.append(f"  夹爪  当前 {r.old_gripper_config}  新值 {r.gripper_config}\n")
         if any(r.max_change > OFFSET_WARN_RAD for r in res.values()):
-            t.append(f"\nAn offset changes by more than {OFFSET_WARN_RAD} rad: check that the hand is really "
-                     "in the start pose.", style="yellow")
+            t.append(f"\n有零位变化超过 {OFFSET_WARN_RAD} rad：请确认主手确实在初始姿态。", style="yellow")
         self.query_one("#offsets-result", Static).update(t)
         self.query_one("#offsets-save", Button).disabled = False
 
     def _save_offsets(self) -> None:
         r = self.offset_result
-        if not r or not self._write_guard("offsets"):
+        if not r or not self._write_guard("零位"):
             return
 
         def done(yes: bool) -> None:
             if yes:
                 cal.save_offsets(r)
-                self.cal_log("info", "Offsets and gripper config saved to the ini")
-                self.notify("Offsets saved")
+                self.cal_log("info", "零位和夹爪参数已写入 ini")
+                self.notify("零位已保存")
 
         if any(x.max_change > OFFSET_WARN_RAD for x in r.values()):
-            self.app.push_screen(ConfirmScreen(f"An offset changes by more than {OFFSET_WARN_RAD} rad. "
-                                               "Save anyway?"), done)
+            self.app.push_screen(ConfirmScreen(f"有零位变化超过 {OFFSET_WARN_RAD} rad，仍然保存吗？"), done)
         else:
             done(True)
 
@@ -285,7 +290,7 @@ class CalibrationScreen(Screen):
         try:
             hc.start()
         except Exception as e:
-            self.cal_log("error", f"Could not open the master hands: {e}")
+            self.cal_log("error", f"无法打开主手：{e}")
             self._ui(self._hands_stopped)
             return
         self.hand_check = hc
@@ -302,7 +307,7 @@ class CalibrationScreen(Screen):
         hc, self.hand_check = self.hand_check, None
         if hc:
             hc.stop()
-            self.cal_log("info", "Hand check stopped, both hands locked")
+            self.cal_log("info", "手柄检查已停止，两只手已锁定")
             try:
                 self._hands_stopped()
             except Exception:
@@ -317,25 +322,25 @@ class CalibrationScreen(Screen):
             self._stop_hands()
             return
         t = Text()
-        for i, name in enumerate(("LEFT", "RIGHT")):
-            t.append(f"{name:<6}")
-            t.append(" UNLOCKED " if s.unlocked[i] else " locked ",
+        for i, name in enumerate(("左手", "右手")):
+            t.append(f"{name}  ")
+            t.append(" 已解锁 " if s.unlocked[i] else " 已锁定 ",
                      style="bold black on yellow" if s.unlocked[i] else "grey50")
             if s.keys is not None:
                 a, b = s.keys[i][0], s.keys[i][1]
-                t.append(f"   A {'down' if a == 0 else 'up  '}  B {'down' if b == 0 else 'up  '}")
+                t.append(f"   A {'按下' if a == 0 else '松开'}  B {'按下' if b == 0 else '松开'}")
             t.append("\n")
             if s.joints is not None:
                 j = s.joints[7 * i:7 * i + 7]
-                t.append("  joints (deg) " + "  ".join(f"{v:7.1f}" for v in np.rad2deg(j[:6])))
-                t.append(f"   trigger {j[6]:.2f}\n")
+                t.append("  关节角（度） " + "  ".join(f"{v:7.1f}" for v in np.rad2deg(j[:6])))
+                t.append(f"   扳机 {j[6]:.2f}\n")
         self.query_one("#hands-result", Static).update(t)
 
     # ------------------------------------------------------------------ cameras
     def _detect_cams(self) -> None:
         self._close_view()  # detection resets the devices
         self.query_one("#cams-detect", Button).disabled = True
-        self.cal_log("info", "Detecting RealSense cameras ...")
+        self.cal_log("info", "正在检测 RealSense 相机 ...")
         self._detect_worker()
 
     @work(thread=True, group="cams")
@@ -343,7 +348,7 @@ class CalibrationScreen(Screen):
         try:
             res = cal.check_cameras(**self.hooks.get("check_cameras", {}))
         except Exception as e:
-            self.cal_log("error", f"Camera detection failed: {e}")
+            self.cal_log("error", f"相机检测失败：{e}")
             res = None
         self._ui(self._cams_done, res)
 
@@ -352,38 +357,38 @@ class CalibrationScreen(Screen):
         if res is None:
             return
         self.camera_result = res
-        t = Text(f"found {len(res.found)}: {', '.join(res.found) or 'none'}\n")
+        t = Text(f"找到 {len(res.found)} 个：{', '.join(res.found) or '无'}\n")
         for k, serial in res.assigned.items():
             ok = serial in res.found
             t.append(f"  {k:<6}{serial:<16}")
-            t.append("connected\n" if ok else "NOT CONNECTED\n", style="green" if ok else "red")
+            t.append("已连接\n" if ok else "未连接\n", style="green" if ok else "red")
         if res.unassigned:
-            t.append(f"not assigned: {', '.join(res.unassigned)}\n", style="yellow")
+            t.append(f"未分配：{', '.join(res.unassigned)}\n", style="yellow")
         self.query_one("#cams-result", Static).update(t)
         options = sorted(set(res.found) | set(res.assigned.values()))
         for k in cal.CAMERA_KEYS:
             sel = self.query_one(f"#cam-{k}", Select)
-            sel.set_options([(o + ("" if o in res.found else "  (not connected)"), o) for o in options])
+            sel.set_options([(o + ("" if o in res.found else "（未连接）"), o) for o in options])
             sel.value = res.assigned[k]
         self.query_one("#cams-save", Button).disabled = False
-        self.cal_log("info", f"{len(res.found)} camera(s) found")
+        self.cal_log("info", f"找到 {len(res.found)} 个相机")
 
     def _save_cams(self) -> None:
         values = {k: self.query_one(f"#cam-{k}", Select).value for k in cal.CAMERA_KEYS}
         if any(not isinstance(v, str) for v in values.values()):
-            self.notify("Assign all three cameras", severity="error")
+            self.notify("请为三个位置都分配相机", severity="error")
             return
         if len(set(values.values())) != 3:
-            self.notify("Each camera needs a different serial", severity="error")
+            self.notify("三个相机必须是不同的序列号", severity="error")
             return
         if values == load_ini_data_camera():
-            self.notify("No change")
+            self.notify("没有改动")
             return
-        if not self._write_guard("cameras"):
+        if not self._write_guard("相机"):
             return
         cal.save_cameras(values)
-        self.cal_log("info", f"Cameras saved: {values}")
-        self.notify("Cameras saved")
+        self.cal_log("info", f"相机已写入 ini：{values}")
+        self.notify("相机已保存")
 
     # ------------------------------------------------------------------ camera window
     def _view_assignment(self) -> Dict[str, str]:
@@ -402,7 +407,7 @@ class CalibrationScreen(Screen):
         button = self.query_one("#cams-view", Button)
         button.disabled = True
         assigned = self._view_assignment()
-        self.cal_log("info", f"Opening cameras for the window: {assigned}")
+        self.cal_log("info", f"正在打开相机：{assigned}")
         self._open_view_worker(assigned)
 
     @work(thread=True, group="cams-view")
@@ -410,7 +415,7 @@ class CalibrationScreen(Screen):
         try:
             cams = cal.open_cameras(assigned, **self.hooks.get("open_cameras", {}))
         except Exception as e:
-            self.cal_log("error", f"Could not open the cameras: {e}")
+            self.cal_log("error", f"无法打开相机：{e}")
             self._ui(self._view_closed_ui)
             return
         try:
@@ -425,12 +430,12 @@ class CalibrationScreen(Screen):
 
     def _view_opened_ui(self) -> None:
         b = self.query_one("#cams-view", Button)
-        b.disabled, b.label = False, "Close view"
-        self.cal_log("info", "Camera window open (top | left | right)")
+        b.disabled, b.label = False, "关闭窗口"
+        self.cal_log("info", "相机窗口已打开（top | left | right）")
 
     def _view_closed_ui(self) -> None:
         b = self.query_one("#cams-view", Button)
-        b.disabled, b.label = False, "Camera view"
+        b.disabled, b.label = False, "相机窗口"
 
     def _view_closed_by_window(self, error) -> None:
         # preview thread: X button or read error
@@ -438,7 +443,7 @@ class CalibrationScreen(Screen):
         if cams:
             cal.close_cameras(cams)
         self.cal_log("warn" if error else "info",
-                     f"Camera window failed: {error}" if error else "Camera window closed")
+                     f"相机窗口出错：{error}" if error else "相机窗口已关闭")
         try:
             self._ui(self._view_closed_ui)
         except Exception:
@@ -450,7 +455,7 @@ class CalibrationScreen(Screen):
             return
         get_preview().hide()
         cal.close_cameras(cams)
-        self.cal_log("info", "Camera window closed")
+        self.cal_log("info", "相机窗口已关闭")
         try:
             self._view_closed_ui()
         except Exception:
