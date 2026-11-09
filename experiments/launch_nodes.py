@@ -24,17 +24,27 @@ from dobot_control.settings import load_settings
 class Args:
     robot_port: Optional[int] = None   # default: [NETWORK] zmq_port
     hostname: Optional[str] = None     # default: [NETWORK] zmq_host
+    fake: bool = False                 # serve simulated arms (no hardware; for testing the TUI)
 
 
 def main(args: Args) -> None:
     net = load_settings().network
     port = args.robot_port if args.robot_port is not None else net.zmq_port
     host = args.hostname if args.hostname is not None else net.zmq_host
-    robot_l = DobotRobot(robot_ip=net.left_ip, robot_number=2, gripper_section="GRIPPER_LEFT")
-    robot_r = DobotRobot(robot_ip=net.right_ip, robot_number=2, gripper_section="GRIPPER_RIGHT")
-    server = ZMQServerRobot(BimanualRobot(robot_l, robot_r), port=port, host=host)
-    print(f"Starting robot server on {host}:{port}")
-    server.serve()
+    if args.fake:
+        from dobot_control.fake import FakeRobot
+        robot = FakeRobot()
+    else:
+        robot_l = DobotRobot(robot_ip=net.left_ip, robot_number=2, gripper_section="GRIPPER_LEFT")
+        robot_r = DobotRobot(robot_ip=net.right_ip, robot_number=2, gripper_section="GRIPPER_RIGHT")
+        robot = BimanualRobot(robot_l, robot_r)
+    server = ZMQServerRobot(robot, port=port, host=host)
+    # "Starting robot server on" is the ready marker watched by dobot_control.nodes
+    print(f"Starting robot server on {host}:{port}", flush=True)
+    try:
+        server.serve()
+    except KeyboardInterrupt:
+        print("Robot server stopped", flush=True)
 
 
 if __name__ == "__main__":

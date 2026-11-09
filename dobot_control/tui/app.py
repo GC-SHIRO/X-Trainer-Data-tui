@@ -19,6 +19,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, RichLog, Static
 
 from dobot_control.collector import CollectorSession, Event
+from dobot_control.nodes import NodeProcess, is_local, port_in_use
 from dobot_control.preview import get_preview
 from dobot_control.settings import Settings, save_settings
 from dobot_control.tui.calibration_screen import CalibrationScreen
@@ -33,6 +34,7 @@ PHASE_STYLE = {
     "stopped": ("已停止", "bold white on grey30"),
     "error": ("出错", "bold white on red"),
 }
+NODE_READY_TIMEOUT_S = 60   # connecting both arms + enabling them takes a while
 LIGHT_ZH = {"dark": "灭", "red": "红", "yellow": "黄", "green": "绿"}
 LEVEL_ZH = {"info": "信息", "warn": "警告", "error": "错误"}
 LIGHT_STYLE = {"dark": "grey50", "red": "bold red", "yellow": "bold yellow", "green": "bold green"}
@@ -71,6 +73,7 @@ class CollectorApp(App):
         Binding("c", "connect", "连接"),
         Binding("r", "toggle_record", "录制"),
         Binding("s", "stop_session", "停止"),
+        Binding("n", "toggle_node", "从臂服务"),
         Binding("v", "toggle_preview", "相机窗口"),
         Binding("e", "settings", "设置"),
         Binding("l", "episodes", "数据管理"),
@@ -97,12 +100,15 @@ class CollectorApp(App):
         self._events: "queue.Queue[Event]" = queue.Queue()
         self._quit_armed = 0.0
         self._preview_owner = None      # session whose frames the camera window shows
+        self.node: Optional[NodeProcess] = None   # launch_nodes.py started by this TUI
+        self._external_node = (0.0, False)        # (checked at, a server already listens)
         self._auto_previewed = None     # session for which show_img already opened the window
         if backend == "fake":
             for key, action, desc in self.FAKE_BINDINGS:
                 self.bind(key, action, description=desc)
 
     MAIN_ACTIONS = {"connect", "toggle_record", "stop_session", "settings", "episodes", "calibrate",
+                    "toggle_node",
                     "open_dir", "quit_app", "fake_press", "toggle_preview"}
 
     def _on_main_screen(self) -> bool:
@@ -135,7 +141,9 @@ class CollectorApp(App):
         self.sub_title = "数据采集" + ("  [模拟硬件]" if self.backend == "fake" else "")
         self._write_log(Event(time.time(), "info",
                               "按 c 连接。" + ("" if self.backend == "fake" else
-                                                "请先在另一个终端运行 experiments/launch_nodes.py。")))
+                                                ("连接时会自动启动从臂服务（launch_nodes）。"
+                                                 if self.settings.network.auto_start_node else
+                                                 "按 n 启动从臂服务，或在另一个终端运行 launch_nodes.py。"))))
         self.refresh_view()
         self.set_interval(0.1, self.refresh_view)
         if self.auto_connect:
@@ -172,6 +180,9 @@ class CollectorApp(App):
         status.append(f"  后端：{backend}   机型：{(s and s.robot_type) or '-'}   "
                       f"项目：{c.project_name}\n")
         status.append(f"保存目录：{save_dir}", style="grey70")
+        node_text, node_style = self._node_status()
+        status.append("\n从臂服务：")
+        status.append(node_text, style=node_style)
         if s and s.error:
             status.append(f"\n错误：{s.error}", style="bold red")
         self.query_one("#status", Panel).update(status)
@@ -215,10 +226,23 @@ class CollectorApp(App):
             return
         self.session = CollectorSession(self.settings, backend=self.backend)
         self.session.add_listener(self._events.put)
-        self._connect_worker(self.session)
+        net = self.settings.network
+        if (self.backend == "real" and net.auto_start_node and is_local(net.zmq_host)
+                and not (self.node and self.node.alive) and not port_in_use(net.zmq_host, net.zmq_port)):
+            self._start_node()
+        self._connect_worker(self.session, self.node)
 
     @work(thread=True, exclusive=True, group="connect")
-    def _connect_worker(self, session: CollectorSession) -> None:
+    def _connect_worker(self, session: CollectorSession, node: Optional[NodeProcess]) -> None:
+        if self.backend == "real" and node is not None and node.state == "starting":
+            session.log("info", "等待从臂服务就绪（连接从臂、使能，最长 60 秒）...")
+            if not node.wait_ready(NODE_READY_TIMEOUT_S):
+                reason = node.tail[-1] if node.tail else "无输出"
+                if node.alive:
+                    node.stop()
+                    reason = f"{NODE_READY_TIMEOUT_S} 秒内未就绪"
+                session.fail(f"从臂服务启动失败：{reason}")
+                return
         try:
             session.connect()
         except Exception:
@@ -302,6 +326,60 @@ class CollectorApp(App):
         else:
             self._show_preview()
 
+    # ------------------------------------------------------------------ robot server (launch_nodes)
+    def _node_log(self, level: str, message: str) -> None:
+        self._events.put(Event(time.time(), level, message))
+
+    def _node_status(self):
+        n, net = self.node, self.settings.network
+        if n and n.state == "running":
+            return f"运行中（本界面启动，pid {n.pid}）", "green"
+        if n and n.state == "starting":
+            return "启动中...", "yellow"
+        if not is_local(net.zmq_host):
+            return f"远程 {net.zmq_host}:{net.zmq_port}（需在那台机器上启动）", "grey70"
+        now = time.time()
+        if now - self._external_node[0] > 2.0:
+            self._external_node = (now, port_in_use(net.zmq_host, net.zmq_port))
+        if self._external_node[1]:
+            return f"运行中（外部启动，端口 {net.zmq_port}）", "green"
+        if n and n.state == "exited":
+            return f"已退出（代码 {n.returncode}），按 n 重新启动", "red"
+        if self.backend == "fake":
+            return "未启动（模拟硬件不需要）", "grey50"
+        return ("未启动（连接时自动启动）" if net.auto_start_node else "未启动（按 n 启动）"), "grey50"
+
+    def _start_node(self) -> None:
+        net = self.settings.network
+        self.node = NodeProcess(net.zmq_host, net.zmq_port, self._node_log, fake=self.backend == "fake")
+        try:
+            self.node.start()
+        except OSError as e:
+            self.notify(f"无法启动从臂服务：{e}", severity="error")
+        self._external_node = (0.0, False)
+
+    def action_toggle_node(self) -> None:
+        net = self.settings.network
+        if self.node and self.node.alive:
+            if self._session_active():
+                self.notify("请先停止会话（s），再关闭从臂服务", severity="warning")
+                return
+            self._stop_node_worker(self.node)
+            return
+        if not is_local(net.zmq_host):
+            self.notify(f"从臂服务地址是 {net.zmq_host}，需要在那台机器上启动", severity="warning")
+            return
+        if port_in_use(net.zmq_host, net.zmq_port):
+            self.notify(f"端口 {net.zmq_port} 上已有从臂服务在运行（外部启动）", severity="warning")
+            return
+        self._start_node()
+
+    @work(thread=True, group="node")
+    def _stop_node_worker(self, node: NodeProcess) -> None:
+        self._node_log("info", "[从臂服务] 正在关闭...")
+        node.stop()
+        self._external_node = (0.0, False)
+
     def _session_active(self) -> bool:
         return bool(self.session and self.session.state.phase in ("connecting", "ready", "running"))
 
@@ -341,6 +419,8 @@ class CollectorApp(App):
         self._hide_preview()
         if s:
             s.stop()
+        if self.node and self.node.alive:
+            self.node.stop()   # only the server this TUI started
         self.exit()
 
     def action_fake_press(self, hand: int, key: int, duration: float) -> None:

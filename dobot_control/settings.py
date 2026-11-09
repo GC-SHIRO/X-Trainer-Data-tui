@@ -37,6 +37,8 @@ class NetworkSettings:
     check_firmware: bool = True
     # "auto" queries the controller; otherwise "Nova 2" or "Nova 5"
     robot_type: str = "auto"
+    # TUI: start experiments/launch_nodes.py automatically on connect when none is running locally
+    auto_start_node: bool = True
 
 
 @dataclass
@@ -125,6 +127,7 @@ FIELD_LABEL = {
     ("network", "zmq_port"): "从臂服务端口",
     ("network", "check_firmware"): "检查固件",
     ("network", "robot_type"): "机型",
+    ("network", "auto_start_node"): "自动启动从臂服务",
     ("safety", "enabled"): "启用安全检查",
     ("safety", "x_range_left"): "左臂 X 范围",
     ("safety", "x_range_right"): "右臂 X 范围",
@@ -148,6 +151,7 @@ FIELD_HELP = {
     ("network", "zmq_port"): "launch_nodes.py 端口",
     ("network", "check_firmware"): "固件低于 V3.5.8.1 时拒绝连接",
     ("network", "robot_type"): "auto = 向左臂控制器查询",
+    ("network", "auto_start_node"): "TUI 连接时本机没有 launch_nodes 就自动启动，退出 TUI 时一并关闭",
     ("safety", "enabled"): "工作空间 / 下降速度 / J3 检查（关节跳变检查始终开启）",
     ("safety", "x_range_left"): "左夹爪尖 X 最小, 最大（mm）",
     ("safety", "x_range_right"): "右夹爪尖 X 最小, 最大（mm）",

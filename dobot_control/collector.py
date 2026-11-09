@@ -35,8 +35,18 @@ HANDS = ("left", "right")
 HAND_ZH = ("左手", "右手")
 
 
+ZMQ_TIMEOUT_MS = 10000   # robot server silent this long -> error instead of hanging forever
+
+
 class CollectorError(RuntimeError):
     pass
+
+
+def describe_error(e: BaseException) -> str:
+    if type(e).__name__ == "Again":   # zmq.Again: the robot server did not answer
+        return (f"从臂服务无响应（{ZMQ_TIMEOUT_MS // 1000} 秒超时），"
+                "请检查 launch_nodes 是否在运行、从臂网络是否正常")
+    return str(e) or type(e).__name__
 
 
 @dataclass
@@ -292,7 +302,7 @@ class CollectorSession:
         try:
             self._connect()
         except Exception as e:
-            self._fail(str(e), light=False)
+            self._fail(describe_error(e), light=False)
             raise
         self._set(phase="ready")
         self.log("info", "就绪：长按 A 开始同步，按 B 开始录制")
@@ -326,7 +336,7 @@ class CollectorSession:
             self.agent = BimanualAgent(DobotAgent("LEFT", hands_dict["HAND_LEFT"]),
                                        DobotAgent("RIGHT", hands_dict["HAND_RIGHT"]))
             self.log("info", f"正在连接从臂服务 {net.zmq_host}:{net.zmq_port}...")
-            robot_client = ZMQClientRobot(port=net.zmq_port, host=net.zmq_host)
+            robot_client = ZMQClientRobot(port=net.zmq_port, host=net.zmq_host, timeout_ms=ZMQ_TIMEOUT_MS)
             if net.check_firmware:
                 for ip, name in ((net.left_ip, "左臂"), (net.right_ip, "右臂")):
                     err = firmware_error(ip, name)
@@ -368,7 +378,8 @@ class CollectorSession:
             while not self._stop.is_set():
                 self._step()
         except Exception as e:
-            self._fail(str(e) or type(e).__name__)
+            # no light change when the server is gone: that call would only time out again
+            self._fail(describe_error(e), light=type(e).__name__ != "Again")
             return
         if self.state.recording:
             self._set(episodes_recorded=self.state.episodes_recorded + 1)
@@ -399,6 +410,10 @@ class CollectorSession:
             self.buttons.stop()
         for c in self.cameras:
             c.stop()
+
+    def fail(self, message: str) -> None:
+        """Put the session into the error state from outside (e.g. robot server failed to start)."""
+        self._fail(message, light=False)
 
     # ------------------------------------------------------------- recording API
     def start_recording(self) -> bool:

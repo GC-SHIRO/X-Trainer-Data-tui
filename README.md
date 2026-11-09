@@ -52,14 +52,18 @@ python experiments/run_control.py  # 终端 2：遥操作与录制
 python experiments/run_control.py --fake --show-img False  # 无硬件模拟运行
 ```
 
-也可以用终端界面代替终端 2 的 `run_control.py`：
+也可以只开一个终端，用终端界面代替上面两个终端：
 
 ```bash
 python experiments/run_tui.py            # 按 c 连接；--connect 启动即连接
 python experiments/run_tui.py --fake     # 无硬件：数字键 1-5 模拟主手按键
 ```
 
-TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧数、指示灯、控制频率和相机帧率，以及事件日志。键位：`c` 连接/重连，`e` 设置，`l` episode 管理，`k` 标定工具，`v` 打开/关闭相机窗口，`r` 开始/停止录制（同 B 键，也要求至少一只手在同步），`s` 停止会话，`q` 退出（录制中需连按两次）。模拟模式额外有 `1`/`2` 左手 A 短按/长按，`3`/`4` 右手 A 短按/长按，`5` B。相机窗口和原版 `run_control.py` 的弹窗一样（窗口名 `0`，top | left | right 并排），`[COLLECT] show_img = True` 时连接后自动弹出，点窗口的关闭按钮或按 `v` 关闭。窗口需要图形桌面，在没有 `DISPLAY` 的 SSH 终端里会提示不可用，不影响采集。
+TUI 按 `c` 连接时，如果本机还没有从臂服务在运行，会自动在后台启动 `launch_nodes.py`，等它连上两台从臂并就绪（最长 60 秒）后再开始采集；它的输出显示在事件日志里（去掉了空闲时每毫秒一行的超时打印）。按 `n` 可以单独启动/关闭从臂服务（会话运行时不能关闭），退出 TUI 时一并关闭。如果已经在别的终端手动运行了 `launch_nodes.py`，TUI 会识别为"外部启动"并直接使用，不会重复启动，退出时也不会关闭它。设置里的 `[NETWORK] auto_start_node = False` 可以关掉自动启动；`zmq_host` 不是本机地址时也不会自动启动。
+
+从臂服务如果中途退出，控制循环在 10 秒无响应后报错停止，不会再像原来那样一直卡住。
+
+TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧数、指示灯、控制频率和相机帧率，以及事件日志。键位：`c` 连接/重连，`n` 启动/关闭从臂服务，`e` 设置，`l` episode 管理，`k` 标定工具，`v` 打开/关闭相机窗口，`r` 开始/停止录制（同 B 键，也要求至少一只手在同步），`s` 停止会话，`q` 退出（录制中需连按两次）。模拟模式额外有 `1`/`2` 左手 A 短按/长按，`3`/`4` 右手 A 短按/长按，`5` B。相机窗口和原版 `run_control.py` 的弹窗一样（窗口名 `0`，top | left | right 并排），`[COLLECT] show_img = True` 时连接后自动弹出，点窗口的关闭按钮或按 `v` 关闭。窗口需要图形桌面，在没有 `DISPLAY` 的 SSH 终端里会提示不可用，不影响采集。
 
 按键：长按 A 开/关该手同步（黄灯）；短按 A 锁定/解锁；B（任一只手）开始/停止录制（绿灯），仅在至少一只手同步时才能开始。出错（关节跳变、安全保护、相机掉线）时亮红灯并停止会话。
 
@@ -80,7 +84,7 @@ TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧
 | 段 | 内容 |
 |---|---|
 | `[COLLECT]` | `save_root`（空 = `<仓库上一级>/datasets`）、`project_name`、`show_img`、`jpeg_quality`、`top_crop`（上,下,左,右 比例）、`control_hz`（0 = 不限速） |
-| `[NETWORK]` | `left_ip` `right_ip` `zmq_host` `zmq_port` `check_firmware` `robot_type`（auto / Nova 2 / Nova 5） |
+| `[NETWORK]` | `left_ip` `right_ip` `zmq_host` `zmq_port` `check_firmware` `robot_type`（auto / Nova 2 / Nova 5）、`auto_start_node`（TUI 自动启动从臂服务） |
 | `[SAFETY]` | `enabled`、工作空间范围（mm）、`max_z_down_speed`（m/s）、`servo_step_limit`（rad）、`check_j3` |
 
 缺省值与原脚本写死的值一致。`run_control.py` 的命令行参数可临时覆盖（`--help` 查看）。
