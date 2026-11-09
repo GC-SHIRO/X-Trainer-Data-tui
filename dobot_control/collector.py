@@ -98,6 +98,10 @@ class CameraWorker:
     def alive(self) -> bool:
         return self._thread.is_alive()
 
+    def join(self, timeout: float) -> None:
+        if self._thread.is_alive():
+            self._thread.join(timeout)
+
     def _process(self, rgb: np.ndarray) -> np.ndarray:
         if self.index != 0:
             return rgb[:, :, ::-1]
@@ -166,6 +170,10 @@ class ButtonMonitor:
 
     def stop(self):
         self._stop.set()
+
+    def join(self, timeout: float) -> None:
+        if self._thread.is_alive():
+            self._thread.join(timeout)
 
     def snapshot(self) -> np.ndarray:
         with self.lock:
@@ -253,6 +261,11 @@ class CollectorSession:
         self.buttons: Optional[ButtonMonitor] = None
         self.env = None
         self.agent = None
+        # everything opened in _connect(), released by stop() so a new session can reopen it
+        self._raw_cameras: list = []
+        self._opened_hands: list = []
+        self._robot_client = None
+        self._released = False
         # loop variables (same names as the original script)
         self._last_status = np.zeros((2, 3), dtype=int)
         self._start_servo = False
@@ -315,6 +328,7 @@ class CollectorSession:
             from dobot_control.agents.agent import BimanualAgent
             from dobot_control.fake import build_fake_backend
             cams, hands, robot_client = build_fake_backend()
+            self._raw_cameras = cams
             self.fake_hands = hands
             self.agent = BimanualAgent(hands[0], hands[1])
             robot_type = "Nova 2" if net.robot_type == "auto" else net.robot_type
@@ -328,15 +342,17 @@ class CollectorSession:
 
             camera_ids = load_ini_data_camera()
             self.log("info", "正在打开相机...")
-            cams = [RealSenseCamera(flip=True, device_id=camera_ids["top"]),
-                    RealSenseCamera(flip=False, device_id=camera_ids["left"]),
-                    RealSenseCamera(flip=True, device_id=camera_ids["right"])]
+            for key, flip in (("top", True), ("left", False), ("right", True)):
+                self._raw_cameras.append(RealSenseCamera(flip=flip, device_id=camera_ids[key]))
+            cams = self._raw_cameras
             self.log("info", "正在打开主手...")
             _, hands_dict = load_ini_data_hands()
-            self.agent = BimanualAgent(DobotAgent("LEFT", hands_dict["HAND_LEFT"]),
-                                       DobotAgent("RIGHT", hands_dict["HAND_RIGHT"]))
+            for side, section in (("LEFT", "HAND_LEFT"), ("RIGHT", "HAND_RIGHT")):
+                self._opened_hands.append(DobotAgent(side, hands_dict[section]))
+            self.agent = BimanualAgent(*self._opened_hands)
             self.log("info", f"正在连接从臂服务 {net.zmq_host}:{net.zmq_port}...")
             robot_client = ZMQClientRobot(port=net.zmq_port, host=net.zmq_host, timeout_ms=ZMQ_TIMEOUT_MS)
+            self._robot_client = robot_client
             if net.check_firmware:
                 for ip, name in ((net.left_ip, "左臂"), (net.right_ip, "右臂")):
                     err = firmware_error(ip, name)
@@ -395,8 +411,34 @@ class CollectorSession:
             self.buttons.stop()
         for c in self.cameras:
             c.stop()
+        self._release()
         if self.state.phase in ("ready", "connecting"):
             self._set(phase="stopped")
+
+    def _release(self) -> None:
+        """Close cameras, master-hand serial ports and the robot-server connection (once)."""
+        if self._released:
+            return
+        self._released = True
+        if self.buttons:
+            self.buttons.join(1.0)          # it polls the hands; stop it before closing them
+        for c in self.cameras:
+            c.join(2.0)
+        for cam in self._raw_cameras:
+            try:
+                getattr(cam, "stop", lambda: None)()
+            except Exception:
+                pass
+        for hand in self._opened_hands:
+            try:
+                hand.close()
+            except Exception:
+                pass
+        if self._robot_client is not None:
+            try:
+                self._robot_client.close()
+            except Exception:
+                pass
 
     def _fail(self, message: str, light: bool = True) -> None:
         self.log("error", message)

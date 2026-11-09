@@ -58,3 +58,6 @@ class DobotAgent(Agent):
 
     def get_keys(self):
         return self._robot.get_key_status()
+
+    def close(self) -> None:
+        self._robot.close()

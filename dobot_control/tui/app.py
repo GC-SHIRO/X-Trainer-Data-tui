@@ -71,7 +71,7 @@ class CollectorApp(App):
 
     BINDINGS = [
         Binding("c", "connect", "连接"),
-        Binding("r", "toggle_record", "录制"),
+        Binding("r", "restart_all", "重启服务"),
         Binding("s", "stop_session", "停止"),
         Binding("n", "toggle_node", "从臂服务"),
         Binding("v", "toggle_preview", "相机窗口"),
@@ -99,6 +99,8 @@ class CollectorApp(App):
         self.session: Optional[CollectorSession] = None
         self._events: "queue.Queue[Event]" = queue.Queue()
         self._quit_armed = 0.0
+        self._restart_armed = 0.0
+        self._restarting = False
         self._preview_owner = None      # session whose frames the camera window shows
         self.node: Optional[NodeProcess] = None   # launch_nodes.py started by this TUI
         self._external_node = (0.0, False)        # (checked at, a server already listens)
@@ -107,7 +109,7 @@ class CollectorApp(App):
             for key, action, desc in self.FAKE_BINDINGS:
                 self.bind(key, action, description=desc)
 
-    MAIN_ACTIONS = {"connect", "toggle_record", "stop_session", "settings", "episodes", "calibrate",
+    MAIN_ACTIONS = {"connect", "restart_all", "stop_session", "settings", "episodes", "calibrate",
                     "toggle_node",
                     "open_dir", "quit_app", "fake_press", "toggle_preview"}
 
@@ -185,6 +187,8 @@ class CollectorApp(App):
         status.append(node_text, style=node_style)
         if s and s.error:
             status.append(f"\n错误：{s.error}", style="bold red")
+            if phase == "error":
+                status.append("   按 r 重启全部服务", style="bold yellow")
         self.query_one("#status", Panel).update(status)
 
         for i, side in enumerate(("left", "right")):
@@ -224,16 +228,23 @@ class CollectorApp(App):
         if self.session and self.session.state.phase in ("connecting", "ready", "running"):
             self.notify("会话已在运行", severity="warning")
             return
-        self.session = CollectorSession(self.settings, backend=self.backend)
-        self.session.add_listener(self._events.put)
         net = self.settings.network
         if (self.backend == "real" and net.auto_start_node and is_local(net.zmq_host)
                 and not (self.node and self.node.alive) and not port_in_use(net.zmq_host, net.zmq_port)):
             self._start_node()
-        self._connect_worker(self.session, self.node)
+        self._begin_session()
+
+    def _begin_session(self) -> None:
+        old = self.session
+        self.session = CollectorSession(self.settings, backend=self.backend)
+        self.session.add_listener(self._events.put)
+        self._connect_worker(self.session, self.node, old)
 
     @work(thread=True, exclusive=True, group="connect")
-    def _connect_worker(self, session: CollectorSession, node: Optional[NodeProcess]) -> None:
+    def _connect_worker(self, session: CollectorSession, node: Optional[NodeProcess],
+                        old: Optional[CollectorSession] = None) -> None:
+        if old is not None:
+            old.stop()   # release the previous session's hands / cameras before reopening them
         if self.backend == "real" and node is not None and node.state == "starting":
             session.log("info", "等待从臂服务就绪（连接从臂、使能，最长 60 秒）...")
             if not node.wait_ready(NODE_READY_TIMEOUT_S):
@@ -250,15 +261,45 @@ class CollectorApp(App):
             return  # the error is already in the event log / state
         session.start()
 
-    def action_toggle_record(self) -> None:
-        s = self.session
-        if not s or s.state.phase != "running":
-            self.notify("会话未运行", severity="warning")
+    # ------------------------------------------------------------------ restart everything
+    def action_restart_all(self) -> None:
+        """Stop the session, restart the robot server with its alarms cleared, reconnect."""
+        if self._restarting:
+            self.notify("正在重启，请稍候", severity="warning")
             return
-        if s.state.recording:
-            s.stop_recording()
-        elif not s.start_recording():
-            self.notify("至少一只手在同步时才能录制（长按 A）", severity="warning")
+        s = self.session
+        if s and s.state.recording and time.time() - self._restart_armed > 3:
+            self._restart_armed = time.time()
+            self.notify("正在录制，再按一次 r 停止录制并重启全部服务", severity="warning")
+            return
+        self._restarting = True
+        self._hide_preview()
+        self._events.put(Event(time.time(), "warn", "重启全部服务：停止会话 → 重启从臂服务并清除报警 → 重新连接"))
+        self._restart_worker(s, self.node)
+
+    @work(thread=True, group="restart")
+    def _restart_worker(self, session: Optional[CollectorSession], node: Optional[NodeProcess]) -> None:
+        had_node = node is not None and node.state != "stopped"   # ours, running or crashed
+        try:
+            if session is not None:
+                session.stop()
+            if node is not None and node.alive:
+                node.stop()
+        finally:
+            self.call_from_thread(self._restart_connect, had_node)
+
+    def _restart_connect(self, had_node: bool) -> None:
+        try:
+            net = self.settings.network
+            self._external_node = (0.0, False)
+            if is_local(net.zmq_host) and port_in_use(net.zmq_host, net.zmq_port):
+                self._events.put(Event(time.time(), "warn", "从臂服务是外部启动的，TUI 无法重启它；"
+                                                            "如有报警，请在那个终端重启 launch_nodes"))
+            elif is_local(net.zmq_host) and (had_node or (self.backend == "real" and net.auto_start_node)):
+                self._start_node(clear_error=True)
+            self._begin_session()
+        finally:
+            self._restarting = False
 
     def action_stop_session(self) -> None:
         if self.session and self.session.state.phase in ("connecting", "ready", "running"):
@@ -349,9 +390,10 @@ class CollectorApp(App):
             return "未启动（模拟硬件不需要）", "grey50"
         return ("未启动（连接时自动启动）" if net.auto_start_node else "未启动（按 n 启动）"), "grey50"
 
-    def _start_node(self) -> None:
+    def _start_node(self, clear_error: bool = False) -> None:
         net = self.settings.network
-        self.node = NodeProcess(net.zmq_host, net.zmq_port, self._node_log, fake=self.backend == "fake")
+        self.node = NodeProcess(net.zmq_host, net.zmq_port, self._node_log, fake=self.backend == "fake",
+                                clear_error=clear_error)
         try:
             self.node.start()
         except OSError as e:

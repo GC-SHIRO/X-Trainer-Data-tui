@@ -10,7 +10,7 @@ class DobotRobot(Robot):
     """A class representing a UR robot."""
 
     def __init__(self, robot_ip: str = "192.168.5.1", no_gripper: bool = False, robot_number: int = 1,
-                 gripper_section: str = None):
+                 gripper_section: str = None, clear_error: bool = False):
         from dobot_control.robots import dobot_api
         self.robot_number = robot_number
         self.frequency_ = 1 / 0.015
@@ -26,6 +26,8 @@ class DobotRobot(Robot):
         #     sys.exit()
         self.robot_ip = robot_ip
         self.r_inter = dobot_api.DobotApiDashboard(robot_ip, 29999)  # 获取信息指令的端�?
+        if clear_error:  # restart after an alarm: clear it before enabling
+            print(f"[{robot_ip}] ClearError: {self.r_inter.ClearError()}", flush=True)
         self.r_inter.EnableRobot()  # 上使能机械臂，发送指令前必须执行�?
         self.r_inter.SpeedFactor(20)  # 全局速度设置
         self.r_inter.AccJ(20)  # 全局加速度设置

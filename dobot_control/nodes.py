@@ -46,10 +46,11 @@ def _is_noise(line: str) -> bool:
 class NodeProcess:
     """One launch_nodes.py child process. States: stopped, starting, running, exited."""
 
-    def __init__(self, host: str, port: int, log: Log, fake: bool = False):
+    def __init__(self, host: str, port: int, log: Log, fake: bool = False, clear_error: bool = False):
         self.host = host
         self.port = port
         self.fake = fake
+        self.clear_error = clear_error
         self._log = log
         self._proc: Optional[subprocess.Popen] = None
         self._ready = threading.Event()
@@ -82,6 +83,8 @@ class NodeProcess:
         cmd = [sys.executable, "-u", str(NODE_SCRIPT), "--robot-port", str(self.port), "--hostname", self.host]
         if self.fake:
             cmd.append("--fake")
+        if self.clear_error:
+            cmd.append("--clear-error")
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
         kw = {}
         if os.name == "nt":

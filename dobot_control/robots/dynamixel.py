@@ -131,5 +131,11 @@ class DynamixelRobot():
     def get_observations(self) -> Dict[str, np.ndarray]:
         return {"joint_state": self.get_joint_state()}
 
+    def close(self) -> None:
+        """Stop the reading thread and release the serial port."""
+        close = getattr(self._driver, "close", None)
+        if close:
+            close()
+
     def get_key_status(self):
         return self._driver.get_keys()

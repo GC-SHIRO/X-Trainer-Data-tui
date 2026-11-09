@@ -25,6 +25,7 @@ class Args:
     robot_port: Optional[int] = None   # default: [NETWORK] zmq_port
     hostname: Optional[str] = None     # default: [NETWORK] zmq_host
     fake: bool = False                 # serve simulated arms (no hardware; for testing the TUI)
+    clear_error: bool = False          # clear controller alarms before enabling the arms
 
 
 def main(args: Args) -> None:
@@ -35,8 +36,10 @@ def main(args: Args) -> None:
         from dobot_control.fake import FakeRobot
         robot = FakeRobot()
     else:
-        robot_l = DobotRobot(robot_ip=net.left_ip, robot_number=2, gripper_section="GRIPPER_LEFT")
-        robot_r = DobotRobot(robot_ip=net.right_ip, robot_number=2, gripper_section="GRIPPER_RIGHT")
+        robot_l = DobotRobot(robot_ip=net.left_ip, robot_number=2, gripper_section="GRIPPER_LEFT",
+                             clear_error=args.clear_error)
+        robot_r = DobotRobot(robot_ip=net.right_ip, robot_number=2, gripper_section="GRIPPER_RIGHT",
+                             clear_error=args.clear_error)
         robot = BimanualRobot(robot_l, robot_r)
     server = ZMQServerRobot(robot, port=port, host=host)
     # "Starting robot server on" is the ready marker watched by dobot_control.nodes

@@ -60,6 +60,12 @@ class BimanualAgent(Agent):
             self.agent_left.set_torque(_flag)
             self.agent_right.set_torque(_flag)
 
+    def close(self) -> None:
+        for a in (self.agent_left, self.agent_right):
+            close = getattr(a, "close", None)
+            if close:
+                close()
+
     def get_keys(self):
         while 1:
             left_keys = self.agent_left.get_keys()
