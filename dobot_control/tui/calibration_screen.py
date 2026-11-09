@@ -23,6 +23,7 @@ from textual.widgets import Button, Footer, Header, Label, RichLog, Select, Stat
 
 from dobot_control import calibration as cal
 from dobot_control.config import load_ini_data_camera, load_ini_data_gripper, load_ini_data_hands
+from dobot_control.preview import get_preview
 from dobot_control.tui.widgets import ConfirmScreen
 
 LEVEL_STYLE = {"info": "white", "warn": "yellow", "error": "bold red"}
@@ -53,6 +54,7 @@ class CalibrationScreen(Screen):
         self.offset_result: Optional[Dict[str, cal.HandOffset]] = None
         self.camera_result: Optional[cal.CameraCheck] = None
         self.hand_check: Optional[cal.HandCheck] = None
+        self.preview_cams = None          # cameras opened for the preview window
 
     # ------------------------------------------------------------------ layout
     def compose(self) -> ComposeResult:
@@ -93,6 +95,7 @@ class CalibrationScreen(Screen):
                     with Horizontal(classes="buttons"):
                         yield Button("Detect", id="cams-detect", variant="primary")
                         yield Button("Save cameras", id="cams-save", disabled=True)
+                        yield Button("Camera view", id="cams-view")
                     yield Static("", id="cams-result", classes="result")
                     with Vertical(id="cams-assign"):
                         for k in cal.CAMERA_KEYS:
@@ -137,16 +140,19 @@ class CalibrationScreen(Screen):
             "offsets-read": self._read_offsets, "offsets-save": self._save_offsets,
             "hands-start": self._start_hands, "hands-stop": self._stop_hands,
             "cams-detect": self._detect_cams, "cams-save": self._save_cams,
+            "cams-view": self._toggle_view,
         }.get(event.button.id)
         if handler:
             handler()
 
     def action_back(self) -> None:
         self._stop_hands()
+        self._close_view()
         self.app.pop_screen()
 
     def on_unmount(self) -> None:
         self._stop_hands()
+        self._close_view()
 
     # ------------------------------------------------------------------ ports
     def _ports_text(self) -> Text:
@@ -327,6 +333,7 @@ class CalibrationScreen(Screen):
 
     # ------------------------------------------------------------------ cameras
     def _detect_cams(self) -> None:
+        self._close_view()  # detection resets the devices
         self.query_one("#cams-detect", Button).disabled = True
         self.cal_log("info", "Detecting RealSense cameras ...")
         self._detect_worker()
@@ -377,3 +384,74 @@ class CalibrationScreen(Screen):
         cal.save_cameras(values)
         self.cal_log("info", f"Cameras saved: {values}")
         self.notify("Cameras saved")
+
+    # ------------------------------------------------------------------ camera window
+    def _view_assignment(self) -> Dict[str, str]:
+        """Serials chosen in the selects (after Detect), otherwise the ini."""
+        assigned = load_ini_data_camera()
+        for k in cal.CAMERA_KEYS:
+            v = self.query_one(f"#cam-{k}", Select).value
+            if isinstance(v, str):
+                assigned[k] = v
+        return assigned
+
+    def _toggle_view(self) -> None:
+        if self.preview_cams is not None:
+            self._close_view()
+            return
+        button = self.query_one("#cams-view", Button)
+        button.disabled = True
+        assigned = self._view_assignment()
+        self.cal_log("info", f"Opening cameras for the window: {assigned}")
+        self._open_view_worker(assigned)
+
+    @work(thread=True, group="cams-view")
+    def _open_view_worker(self, assigned: Dict[str, str]) -> None:
+        try:
+            cams = cal.open_cameras(assigned, **self.hooks.get("open_cameras", {}))
+        except Exception as e:
+            self.cal_log("error", f"Could not open the cameras: {e}")
+            self._ui(self._view_closed_ui)
+            return
+        try:
+            get_preview().show(lambda: cal.camera_frames(cams), on_close=self._view_closed_by_window)
+        except RuntimeError as e:
+            cal.close_cameras(cams)
+            self.cal_log("warn", str(e))
+            self._ui(self._view_closed_ui)
+            return
+        self.preview_cams = cams
+        self._ui(self._view_opened_ui)
+
+    def _view_opened_ui(self) -> None:
+        b = self.query_one("#cams-view", Button)
+        b.disabled, b.label = False, "Close view"
+        self.cal_log("info", "Camera window open (top | left | right)")
+
+    def _view_closed_ui(self) -> None:
+        b = self.query_one("#cams-view", Button)
+        b.disabled, b.label = False, "Camera view"
+
+    def _view_closed_by_window(self, error) -> None:
+        # preview thread: X button or read error
+        cams, self.preview_cams = self.preview_cams, None
+        if cams:
+            cal.close_cameras(cams)
+        self.cal_log("warn" if error else "info",
+                     f"Camera window failed: {error}" if error else "Camera window closed")
+        try:
+            self._ui(self._view_closed_ui)
+        except Exception:
+            pass
+
+    def _close_view(self) -> None:
+        cams, self.preview_cams = self.preview_cams, None
+        if cams is None:
+            return
+        get_preview().hide()
+        cal.close_cameras(cams)
+        self.cal_log("info", "Camera window closed")
+        try:
+            self._view_closed_ui()
+        except Exception:
+            pass

@@ -19,6 +19,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, RichLog, Static
 
 from dobot_control.collector import CollectorSession, Event
+from dobot_control.preview import get_preview
 from dobot_control.settings import Settings, save_settings
 from dobot_control.tui.calibration_screen import CalibrationScreen
 from dobot_control.tui.episodes_screen import EpisodesScreen
@@ -68,6 +69,7 @@ class CollectorApp(App):
         Binding("c", "connect", "Connect/start"),
         Binding("r", "toggle_record", "Record on/off"),
         Binding("s", "stop_session", "Stop session"),
+        Binding("v", "toggle_preview", "Camera view"),
         Binding("e", "settings", "Settings"),
         Binding("l", "episodes", "Episodes"),
         Binding("k", "calibrate", "Calibrate"),
@@ -92,12 +94,14 @@ class CollectorApp(App):
         self.session: Optional[CollectorSession] = None
         self._events: "queue.Queue[Event]" = queue.Queue()
         self._quit_armed = 0.0
+        self._preview_owner = None      # session whose frames the camera window shows
+        self._auto_previewed = None     # session for which show_img already opened the window
         if backend == "fake":
             for key, action, desc in self.FAKE_BINDINGS:
                 self.bind(key, action, description=desc)
 
     MAIN_ACTIONS = {"connect", "toggle_record", "stop_session", "settings", "episodes", "calibrate",
-                    "open_dir", "quit_app", "fake_press"}
+                    "open_dir", "quit_app", "fake_press", "toggle_preview"}
 
     def _on_main_screen(self) -> bool:
         return len(self.screen_stack) <= 1
@@ -153,6 +157,7 @@ class CollectorApp(App):
         s = self.session.snapshot() if self.session else None
         phase = s.phase if s else "idle"
         label, style = PHASE_STYLE.get(phase, (phase.upper(), "bold"))
+        self._sync_preview(phase)
         active = phase in ("connecting", "ready", "running")
         # an active session shows what it runs with; otherwise show what the next connect will use
         c = self.session.settings.collect if s and active else self.settings.collect
@@ -254,6 +259,46 @@ class CollectorApp(App):
         self.notify("Settings saved" + (" - they apply on the next connect" if active else ""))
         self._events.put(Event(time.time(), "info", "Settings saved to the ini"))
 
+    # ------------------------------------------------------------------ camera window
+    def _sync_preview(self, phase: str) -> None:
+        if phase == "running" and self.session is not self._auto_previewed:
+            self._auto_previewed = self.session
+            if self.session.settings.collect.show_img:
+                self._show_preview()
+        if self._preview_owner is not None and (self._preview_owner is not self.session or phase != "running"):
+            self._hide_preview()
+
+    def _show_preview(self) -> None:
+        s = self.session
+        if not s or s.state.phase != "running":
+            self.notify("Connect first (c)", severity="warning")
+            return
+        try:
+            get_preview().show(s.latest_images, on_close=self._preview_closed)
+        except RuntimeError as e:
+            self.notify(f"Camera window unavailable: {e}", severity="warning")
+            return
+        self._preview_owner = s
+        self._events.put(Event(time.time(), "info", "Camera window opened (v to close)"))
+
+    def _hide_preview(self) -> None:
+        if self._preview_owner is not None:
+            get_preview().hide()
+            self._preview_owner = None
+
+    def _preview_closed(self, error) -> None:
+        # preview thread: the window was closed with its X button or failed
+        self._preview_owner = None
+        self._events.put(Event(time.time(), "warn" if error else "info",
+                               f"Camera window failed: {error}" if error else "Camera window closed"))
+
+    def action_toggle_preview(self) -> None:
+        if self._preview_owner is not None and get_preview().visible:
+            self._hide_preview()
+            self._events.put(Event(time.time(), "info", "Camera window closed"))
+        else:
+            self._show_preview()
+
     def _session_active(self) -> bool:
         return bool(self.session and self.session.state.phase in ("connecting", "ready", "running"))
 
@@ -290,6 +335,7 @@ class CollectorApp(App):
             self._quit_armed = time.time()
             self.notify("Recording in progress - press q again to stop and quit", severity="warning")
             return
+        self._hide_preview()
         if s:
             s.stop()
         self.exit()

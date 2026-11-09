@@ -76,6 +76,9 @@ class RealSenseCamera(CameraDriver):
 
         return image, depth
 
+    def stop(self) -> None:
+        self._pipeline.stop()
+
 def _debug_read(camera, save_datastream=False):
 
     cv2.namedWindow("image")

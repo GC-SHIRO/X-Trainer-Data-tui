@@ -28,10 +28,6 @@ def save_ini(ini_file: configparser.ConfigParser) -> None:
         ini_file.write(f)
 
 
-def get_passcode() -> str:
-    return load_ini().get("COMPUTER", "passcode")
-
-
 def load_ini_data_camera() -> Dict[str, str]:
     ini_file = load_ini()
     return {cam: ini_file.get("CAMERA", cam) for cam in ("top", "left", "right")}

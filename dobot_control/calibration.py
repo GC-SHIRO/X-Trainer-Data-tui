@@ -332,3 +332,38 @@ def save_cameras(assigned: Dict[str, str]) -> None:
     for k in CAMERA_KEYS:
         ini.set("CAMERA", k, assigned[k])
     save_ini(ini)
+
+
+CAMERA_FLIPS = {"top": True, "left": False, "right": True}   # as in collector / 5_camera_read
+
+
+def _open_realsense(key: str, serial: str):
+    from dobot_control.cameras.realsense_camera import RealSenseCamera
+    return RealSenseCamera(flip=CAMERA_FLIPS[key], device_id=serial)
+
+
+def open_cameras(assigned: Dict[str, str], open_camera=_open_realsense) -> List[object]:
+    """Open top/left/right for the preview window; closes what was opened if one fails."""
+    cams = []
+    try:
+        for k in CAMERA_KEYS:
+            cams.append(open_camera(k, assigned[k]))
+    except Exception:
+        close_cameras(cams)
+        raise
+    return cams
+
+
+def close_cameras(cams) -> None:
+    for c in cams:
+        fn = getattr(c, "stop", None)
+        if fn:
+            try:
+                fn()
+            except Exception:
+                pass
+
+
+def camera_frames(cams) -> List[np.ndarray]:
+    """One BGR frame per camera (read() returns RGB), like scripts/5_camera_read.py."""
+    return [c.read()[0][:, :, ::-1] for c in cams]

@@ -29,6 +29,17 @@ third_party/     DynamixelSDK、feetech scservo_sdk（随仓库内置）
 pip install -r requirements.txt
 ```
 
+用 `opencv-python`，不要装 `opencv-python-headless`，后者不能弹出相机窗口。
+
+串口权限（只需配置一次，之后程序不再需要 sudo 密码）：
+
+```bash
+sudo cp scripts/99-xtrainer-serial.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+规则让 `/dev/ttyUSB*`、`/dev/ttyACM*` 对普通用户可读写，并把 FTDI 串口的 USB 延迟设为 1 ms。没装规则时，程序只会尝试免密码的 `sudo -n`，失败就打印提示，不会询问或保存密码。
+
 ## 使用流程（均在仓库根目录执行）
 
 ```bash
@@ -48,7 +59,7 @@ python experiments/run_tui.py            # 按 c 连接；--connect 启动即连
 python experiments/run_tui.py --fake     # 无硬件：数字键 1-5 模拟主手按键
 ```
 
-TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧数、指示灯、控制频率和相机帧率，以及事件日志。键位：`c` 连接/重连，`e` 设置，`l` episode 管理，`k` 标定工具，`r` 开始/停止录制（同 B 键，也要求至少一只手在同步），`s` 停止会话，`q` 退出（录制中需连按两次）。模拟模式额外有 `1`/`2` 左手 A 短按/长按，`3`/`4` 右手 A 短按/长按，`5` B。TUI 不显示相机画面，需要看画面时用 `run_control.py`。
+TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧数、指示灯、控制频率和相机帧率，以及事件日志。键位：`c` 连接/重连，`e` 设置，`l` episode 管理，`k` 标定工具，`v` 打开/关闭相机窗口，`r` 开始/停止录制（同 B 键，也要求至少一只手在同步），`s` 停止会话，`q` 退出（录制中需连按两次）。模拟模式额外有 `1`/`2` 左手 A 短按/长按，`3`/`4` 右手 A 短按/长按，`5` B。相机窗口和原版 `run_control.py` 的弹窗一样（窗口名 `0`，top | left | right 并排），`[COLLECT] show_img = True` 时连接后自动弹出，点窗口的关闭按钮或按 `v` 关闭。窗口需要图形桌面，在没有 `DISPLAY` 的 SSH 终端里会提示不可用，不影响采集。
 
 按键：长按 A 开/关该手同步（黄灯）；短按 A 锁定/解锁；B（任一只手）开始/停止录制（绿灯），仅在至少一只手同步时才能开始。出错（关节跳变、安全保护、相机掉线）时亮红灯并停止会话。
 
@@ -89,6 +100,6 @@ TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧
 | Ports | `1_find_port` | 依次探测主手（2M / 1M 波特率）和夹爪，显示 ini 当前值和扫描结果；没找全时保存前会确认，只写找到的 |
 | Offsets | `2_get_offset` | 两只主手摆到 start_joints 姿态后读取，显示新旧零位，变化超过 0.5 rad 时提示并在保存前确认 |
 | Hand check | `3_just_buttonA` | 短按 A 解锁/锁定，实时显示关节角度和按键，用来调整手柄；离开时两只手都会重新锁定 |
-| Cameras | `5_camera_read` | 检测已连接的 RealSense 序列号，分配给 top / left / right（不显示画面，看画面仍用脚本） |
+| Cameras | `5_camera_read` | 检测已连接的 RealSense 序列号，分配给 top / left / right；Camera view 按当前分配弹出三相机窗口，用来确认方向和位置 |
 
 会话运行时不能进入标定（会占用主手和相机），先按 `s` 停止。`--fake` 下标定是演示模式，不会写 ini。原来的四个脚本仍然可以单独使用。

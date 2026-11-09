@@ -115,7 +115,7 @@ ROBOT_TYPES = ("auto", "Nova 2", "Nova 5")
 FIELD_HELP = {
     ("collect", "save_root"): "dataset root; empty = <repo parent>/datasets",
     ("collect", "project_name"): "data goes to <save_root>/<project>/collect_data",
-    ("collect", "show_img"): "camera preview window (run_control.py only)",
+    ("collect", "show_img"): "open the camera window on connect (TUI: v toggles)",
     ("collect", "jpeg_quality"): "JPEG quality 1-100",
     ("collect", "top_crop"): "top camera crop fractions: top, bottom, left, right",
     ("collect", "control_hz"): "0 = as fast as possible (original behaviour)",

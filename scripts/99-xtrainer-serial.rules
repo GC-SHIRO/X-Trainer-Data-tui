@@ -1,0 +1,7 @@
+# X-Trainer serial devices (master hands, grippers): accessible without sudo, 1 ms USB latency.
+# Install once:
+#   sudo cp scripts/99-xtrainer-serial.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+KERNEL=="ttyUSB[0-9]*", MODE="0666"
+KERNEL=="ttyACM[0-9]*", MODE="0666"
+ACTION=="add", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"

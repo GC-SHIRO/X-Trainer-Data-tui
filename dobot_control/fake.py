@@ -188,4 +188,5 @@ def fake_calibration_hooks() -> Dict[str, object]:
         "read_offsets": dict(open_driver=open_offset_driver, prepare_ports=None),
         "HandCheck": dict(open_agent=open_agent),
         "check_cameras": dict(list_ids=lambda: list(serials)),
+        "open_cameras": dict(open_camera=lambda key, serial: FakeCamera(f"{key} {serial}")),
     }
