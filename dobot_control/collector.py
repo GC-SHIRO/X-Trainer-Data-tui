@@ -32,7 +32,7 @@ from dobot_control.safety import check_command
 CAMERA_NAMES = ("top", "left", "right")
 IMAGE_DIRS = ("topImg", "leftImg", "rightImg")
 HANDS = ("left", "right")
-HAND_ZH = ("左手", "右手")
+HAND_ZH = ("左主臂", "右主臂")
 
 
 ZMQ_TIMEOUT_MS = 10000   # robot server silent this long -> error instead of hanging forever
@@ -345,7 +345,7 @@ class CollectorSession:
             for key, flip in (("top", True), ("left", False), ("right", True)):
                 self._raw_cameras.append(RealSenseCamera(flip=flip, device_id=camera_ids[key]))
             cams = self._raw_cameras
-            self.log("info", "正在打开主手...")
+            self.log("info", "正在打开主臂...")
             _, hands_dict = load_ini_data_hands()
             for side, section in (("LEFT", "HAND_LEFT"), ("RIGHT", "HAND_RIGHT")):
                 self._opened_hands.append(DobotAgent(side, hands_dict[section]))
@@ -489,7 +489,7 @@ class CollectorSession:
             if c.error or not c.alive():
                 raise CollectorError(c.error or f"{c.name} 相机线程退出，请检查相机")
         if self.buttons.falling:
-            raise CollectorError("主手跌落传感器触发")
+            raise CollectorError("主臂跌落传感器触发")
 
         agent, env = self.agent, self.env
         what_to_do = self.buttons.snapshot()
@@ -503,7 +503,7 @@ class CollectorSession:
 
         # button A long press: a hand started servoing -> approach the leader pose first
         if dev[0, 1] == 1 or dev[1, 1] == 1:
-            self.log("info", "从臂正在插值靠近主手姿态")
+            self.log("info", "从臂正在插值靠近主臂姿态")
             for i in range(2):
                 if what_to_do[i, 1]:
                     agent.set_torque(i, True)
@@ -511,8 +511,8 @@ class CollectorSession:
             try:
                 self._last_action = dynamic_approach(env, agent, self._flag_in)
             except AssertionError:
-                raise CollectorError("主手与从臂姿态相差过大，"
-                                     "请把主手摆到接近从臂的姿态后重试")
+                raise CollectorError("主臂与从臂姿态相差过大，"
+                                     "请把主臂摆到接近从臂的姿态后重试")
             for i in range(2):
                 if what_to_do[i, 0] and what_to_do[i, 1]:
                     agent.set_torque(i, False)

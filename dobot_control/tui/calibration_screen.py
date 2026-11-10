@@ -69,7 +69,7 @@ class CalibrationScreen(Screen):
         with TabbedContent(id="cal-tabs"):
             with TabPane("串口", id="tab-ports"):
                 with VerticalScroll():
-                    yield Static("插好两只主手和两个夹爪后扫描。先探测主手（Dynamixel，2M / 1M 波特率），"
+                    yield Static("插好两只主臂和两个夹爪后扫描。先探测主臂（Dynamixel，2M / 1M 波特率），"
                                  "再在剩下的串口里找夹爪。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
@@ -78,9 +78,9 @@ class CalibrationScreen(Screen):
                     yield Static(self._ports_text(), id="ports-result", classes="result")
             with TabPane("零位", id="tab-offsets"):
                 with VerticalScroll():
-                    yield Static("作用：把主手读数和从臂关节零位对齐。标定后，主手处于读取时的姿态，"
+                    yield Static("作用：把主臂读数和从臂关节零位对齐。标定后，主臂处于读取时的姿态，"
                                  "从臂就对应 start_joints（从臂初始位，左臂 -90,0,-90,0,90,90 度，右臂镜像）。\n"
-                                 "操作：可先点「从臂回初始位」让从臂作参照，再把两只主手摆成和从臂相同的姿态，"
+                                 "操作：可先点「从臂回初始位」让从臂作参照，再把两只主臂摆成和从臂相同的姿态，"
                                  "松开扳机，然后读取；读取和保存零位本身不会让任何一只臂动。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
@@ -90,7 +90,7 @@ class CalibrationScreen(Screen):
                     yield Static("", id="offsets-result", classes="result")
             with TabPane("手柄检查", id="tab-hands"):
                 with VerticalScroll():
-                    yield Static("短按主手 A 键解锁（关闭力矩，可自由转动），再按一次锁定。"
+                    yield Static("短按主臂 A 键解锁（关闭力矩，可自由转动），再按一次锁定。"
                                  "用来调整手柄；显示的是标定后的角度。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
@@ -254,7 +254,7 @@ class CalibrationScreen(Screen):
                     raise RuntimeError("从臂服务启动失败：" + (node.tail[-1] if node.tail else "无输出"))
             net = self.app.settings.network
             cal.move_followers_home(net.zmq_host, net.zmq_port, log=self.cal_log)
-            self._ui(self.notify, "从臂已到初始位，现在把主手摆成相同姿态后读取零位")
+            self._ui(self.notify, "从臂已到初始位，现在把主臂摆成相同姿态后读取零位")
         except Exception as e:
             from dobot_control.collector import describe_error
             self.cal_log("error", f"从臂回初始位失败：{describe_error(e)}")
@@ -269,7 +269,7 @@ class CalibrationScreen(Screen):
 
     def _read_offsets(self) -> None:
         self.query_one("#offsets-read", Button).disabled = True
-        self.cal_log("info", "正在读取主手关节 ...")
+        self.cal_log("info", "正在读取主臂关节 ...")
         self._read_offsets_worker()
 
     @work(thread=True, group="offsets")
@@ -297,7 +297,7 @@ class CalibrationScreen(Screen):
                      style="bold yellow" if change > OFFSET_WARN_RAD else "grey70")
             t.append(f"  夹爪  当前 {r.old_gripper_config}  新值 {r.gripper_config}\n")
         if any(r.max_change > OFFSET_WARN_RAD for r in res.values()):
-            t.append(f"\n有零位变化超过 {OFFSET_WARN_RAD} rad：请确认主手确实在初始姿态。", style="yellow")
+            t.append(f"\n有零位变化超过 {OFFSET_WARN_RAD} rad：请确认主臂确实在初始姿态。", style="yellow")
         self.query_one("#offsets-result", Static).update(t)
         self.query_one("#offsets-save", Button).disabled = False
 
@@ -330,7 +330,7 @@ class CalibrationScreen(Screen):
         try:
             hc.start()
         except Exception as e:
-            self.cal_log("error", f"无法打开主手：{e}")
+            self.cal_log("error", f"无法打开主臂：{e}")
             self._ui(self._hands_stopped)
             return
         self.hand_check = hc
@@ -347,7 +347,7 @@ class CalibrationScreen(Screen):
         hc, self.hand_check = self.hand_check, None
         if hc:
             hc.stop()
-            self.cal_log("info", "手柄检查已停止，两只手已锁定")
+            self.cal_log("info", "手柄检查已停止，两只主臂已锁定")
             try:
                 self._hands_stopped()
             except Exception:
@@ -362,7 +362,7 @@ class CalibrationScreen(Screen):
             self._stop_hands()
             return
         t = Text()
-        for i, name in enumerate(("左手", "右手")):
+        for i, name in enumerate(("左主臂", "右主臂")):
             t.append(f"{name}  ")
             t.append(" 已解锁 " if s.unlocked[i] else " 已锁定 ",
                      style="bold black on yellow" if s.unlocked[i] else "grey50")

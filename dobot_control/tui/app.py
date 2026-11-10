@@ -129,8 +129,8 @@ class CollectorApp(App):
         with Vertical(id="top"):
             yield Panel("会话", id="status")
             with Horizontal(id="hands"):
-                yield Panel("左手", id="hand-left", classes="hand")
-                yield Panel("右手", id="hand-right", classes="hand")
+                yield Panel("左主臂", id="hand-left", classes="hand")
+                yield Panel("右主臂", id="hand-right", classes="hand")
             with Horizontal():
                 yield Panel("录制", id="recording")
                 yield Panel("频率", id="rates")
@@ -451,7 +451,7 @@ class CollectorApp(App):
 
     def action_calibrate(self) -> None:
         if self._session_active():
-            self.notify("请先停止会话（s）：标定需要占用主手和相机",
+            self.notify("请先停止会话（s）：标定需要占用主臂和相机",
                         severity="warning")
             return
         hooks = None

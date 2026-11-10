@@ -86,7 +86,7 @@ def find_ports(log: Log = _nolog, list_ports: Callable[[], List[str]] = _scan_po
     res = PortScanResult(ports=list(ports))
     log("info", f"串口：{', '.join(ports) or '无'}")
     if len(ports) < 4:
-        res.errors.append(f"应至少有 4 个串口（2 个主手 + 2 个夹爪），只找到 {len(ports)} 个")
+        res.errors.append(f"应至少有 4 个串口（2 个主臂 + 2 个夹爪），只找到 {len(ports)} 个")
 
     _, hands = load_ini_data_hands()
     remaining = list(ports)
@@ -250,7 +250,7 @@ class HandCheck:
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="hand-check", daemon=True)
         self._thread.start()
-        self._log("info", "手柄检查已开始：短按 A 解锁/锁定主手")
+        self._log("info", "手柄检查已开始：短按 A 解锁/锁定主臂")
 
     def stop(self) -> None:
         self._stop.set()

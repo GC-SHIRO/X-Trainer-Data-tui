@@ -159,7 +159,7 @@ FIELD_HELP = {
     ("safety", "z_min_left"): "左夹爪尖 Z 须高于（mm）",
     ("safety", "z_min_right"): "右夹爪尖 Z 须高于（mm）",
     ("safety", "max_z_down_speed"): "末端最大下降速度（m/s）",
-    ("safety", "servo_step_limit"): "相邻两次主手指令的最大关节跳变（rad）",
+    ("safety", "servo_step_limit"): "相邻两次主臂指令的最大关节跳变（rad）",
     ("safety", "check_j3"): "J3 变号时停止",
 }
 

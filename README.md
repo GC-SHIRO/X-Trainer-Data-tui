@@ -1,17 +1,17 @@
 # Dobot Xtrainer — 数据采集精简版
 
-基于越疆 Xtrainer 官方程序（源自 GELLO / ACT，见 THIRD-PARTY-LICENSES）裁剪，只保留**主手遥操作 + 三相机录制**，产出 `collect_data/`。训练、推理、HDF5 转换等已移除。
+基于越疆 Xtrainer 官方程序（源自 GELLO / ACT，见 THIRD-PARTY-LICENSES）裁剪，只保留**主臂遥操作 + 三相机录制**，产出 `collect_data/`。训练、推理、HDF5 转换等已移除。
 
 ## 目录
 
 ```
-dobot_control/   主手(Dynamixel)、从臂(Dobot TCP)、夹爪(Feetech)、RealSense 驱动与 ZMQ 节点
+dobot_control/   主臂(Dynamixel)、从臂(Dobot TCP)、夹爪(Feetech)、RealSense 驱动与 ZMQ 节点
   collector.py   采集核心 CollectorSession（按键状态机、控制循环、录制），CLI/TUI/GUI 共用
   settings.py    [COLLECT] [NETWORK] [SAFETY] 运行设置（读写 ini）
   config.py      硬件标定段 [HAND_*] [GRIPPER_*] [CAMERA] 读写
   safety.py      正运动学 + 工作空间/速度/J3 安全检查
   motion.py      回零、插值靠近、关节跳变检查、指示灯
-  fake.py        假主手/从臂/相机，无硬件调试用
+  fake.py        假主臂/从臂/相机，无硬件调试用
   calibration.py 找串口、读零位、手柄检查、相机序列号（标定脚本的可复用版本）
   episodes.py    episode 列表、完整性检查、移入回收站
   tui/           Textual 终端界面：采集仪表盘、设置页、episode 管理、标定工具
@@ -43,9 +43,9 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ## 使用流程（均在仓库根目录执行）
 
 ```bash
-python -m scripts.1_find_port      # 识别主手/夹爪串口，写入 ini
+python -m scripts.1_find_port      # 识别主臂/夹爪串口，写入 ini
 python scripts/3_just_buttonA.py   # 只测 A 键锁定/同步，用来调整手柄姿态
-python -m scripts.2_get_offset     # 主手摆成从臂初始位的姿态，把主手读数与从臂零位对齐
+python -m scripts.2_get_offset     # 主臂摆成从臂初始位的姿态，把主臂读数与从臂零位对齐
 python -m scripts.5_camera_read    # （可选）检查三相机序列号与方向
 python experiments/launch_nodes.py # 终端 1：连接两台从臂，ZMQ 服务
 python experiments/run_control.py  # 终端 2：遥操作与录制
@@ -56,18 +56,18 @@ python experiments/run_control.py --fake --show-img False  # 无硬件模拟运�
 
 ```bash
 python experiments/run_tui.py            # 按 c 连接；--connect 启动即连接
-python experiments/run_tui.py --fake     # 无硬件：数字键 1-5 模拟主手按键
+python experiments/run_tui.py --fake     # 无硬件：数字键 1-5 模拟主臂按键
 ```
 
 TUI 按 `c` 连接时，如果本机还没有从臂服务在运行，会自动在后台启动 `launch_nodes.py`，等它连上两台从臂并就绪（最长 60 秒）后再开始采集；它的输出显示在事件日志里（去掉了空闲时每毫秒一行的超时打印）。按 `n` 可以单独启动/关闭从臂服务（会话运行时不能关闭），退出 TUI 时一并关闭。如果已经在别的终端手动运行了 `launch_nodes.py`，TUI 会识别为"外部启动"并直接使用，不会重复启动，退出时也不会关闭它。设置里的 `[NETWORK] auto_start_node = False` 可以关掉自动启动；`zmq_host` 不是本机地址时也不会自动启动。
 
 从臂服务如果中途退出，控制循环在 10 秒无响应后报错停止，不会再像原来那样一直卡住。
 
-录制只用主手 B 键（键盘不再能开始/停止录制）。遇到报错（从臂报警、关节跳变、安全保护、相机掉线、从臂服务无响应等）时按 `r` 重启全部服务：停止当前会话并释放主手串口和相机 → 重启从臂服务，并在使能前对两台从臂执行 `ClearError()` 清除控制器报警 → 重新连接，从臂回到初始位。录制中按 `r` 需连按两次，正在录的那条会正常结束保存。从臂服务如果是在别的终端手动启动的，TUI 无法重启它，只会重新连接。注意 `ClearError()` 只清除报警状态，碰撞等报警请先确认现场安全再按 `r`。
+录制只用主臂 B 键（键盘不再能开始/停止录制）。遇到报错（从臂报警、关节跳变、安全保护、相机掉线、从臂服务无响应等）时按 `r` 重启全部服务：停止当前会话并释放主臂串口和相机 → 重启从臂服务，并在使能前对两台从臂执行 `ClearError()` 清除控制器报警 → 重新连接，从臂回到初始位。录制中按 `r` 需连按两次，正在录的那条会正常结束保存。从臂服务如果是在别的终端手动启动的，TUI 无法重启它，只会重新连接。注意 `ClearError()` 只清除报警状态，碰撞等报警请先确认现场安全再按 `r`。
 
-TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧数、指示灯、控制频率和相机帧率，以及事件日志。键位：`c` 连接/重连，`n` 启动/关闭从臂服务，`e` 设置，`l` episode 管理，`k` 标定工具，`v` 打开/关闭相机窗口，`r` 重启全部服务（见下），`s` 停止会话，`q` 退出（录制中需连按两次）。模拟模式额外有 `1`/`2` 左手 A 短按/长按，`3`/`4` 右手 A 短按/长按，`5` B。相机窗口和原版 `run_control.py` 的弹窗一样（窗口名 `0`，top | left | right 并排），`[COLLECT] show_img = True` 时连接后自动弹出，点窗口的关闭按钮或按 `v` 关闭。窗口需要图形桌面，在没有 `DISPLAY` 的 SSH 终端里会提示不可用，不影响采集。
+TUI 显示会话状态、两只主臂的锁定/同步、录制中的 episode 和帧数、指示灯、控制频率和相机帧率，以及事件日志。键位：`c` 连接/重连，`n` 启动/关闭从臂服务，`e` 设置，`l` episode 管理，`k` 标定工具，`v` 打开/关闭相机窗口，`r` 重启全部服务（见下），`s` 停止会话，`q` 退出（录制中需连按两次）。模拟模式额外有 `1`/`2` 左主臂 A 短按/长按，`3`/`4` 右主臂 A 短按/长按，`5` B。相机窗口和原版 `run_control.py` 的弹窗一样（窗口名 `0`，top | left | right 并排），`[COLLECT] show_img = True` 时连接后自动弹出，点窗口的关闭按钮或按 `v` 关闭。窗口需要图形桌面，在没有 `DISPLAY` 的 SSH 终端里会提示不可用，不影响采集。
 
-按键：长按 A 开/关该手同步（黄灯）；短按 A 锁定/解锁；B（任一只手）开始/停止录制（绿灯），仅在至少一只手同步时才能开始。出错（关节跳变、安全保护、相机掉线）时亮红灯并停止会话。
+按键：长按 A 开/关该主臂同步（黄灯）；短按 A 锁定/解锁；B（任一只主臂）开始/停止录制（绿灯），仅在至少一只主臂同步时才能开始。出错（关节跳变、安全保护、相机掉线）时亮红灯并停止会话。
 
 ## 输出
 
@@ -103,9 +103,9 @@ TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧
 
 | 标签页 | 对应脚本 | 说明 |
 |---|---|---|
-| 串口 | `1_find_port` | 依次探测主手（2M / 1M 波特率）和夹爪，显示 ini 当前值和扫描结果；没找全时保存前会确认，只写找到的 |
-| 零位 | `2_get_offset` | 把主手读数与从臂关节零位对齐：可先点「从臂回初始位」让两台从臂走到初始位作参照（会先确认，必要时自动启动从臂服务），再把主手摆成相同姿态后读取，标定后主手在该姿态时从臂即对应 start_joints；显示新旧零位，变化超过 0.5 rad 时提示并在保存前确认 |
-| 手柄检查 | `3_just_buttonA` | 短按 A 解锁/锁定，实时显示关节角度和按键，用来调整手柄；离开时两只手都会重新锁定 |
+| 串口 | `1_find_port` | 依次探测主臂（2M / 1M 波特率）和夹爪，显示 ini 当前值和扫描结果；没找全时保存前会确认，只写找到的 |
+| 零位 | `2_get_offset` | 把主臂读数与从臂关节零位对齐：可先点「从臂回初始位」让两台从臂走到初始位作参照（会先确认，必要时自动启动从臂服务），再把主臂摆成相同姿态后读取，标定后主臂在该姿态时从臂即对应 start_joints；显示新旧零位，变化超过 0.5 rad 时提示并在保存前确认 |
+| 手柄检查 | `3_just_buttonA` | 短按 A 解锁/锁定，实时显示关节角度和按键，用来调整手柄；离开时两只主臂都会重新锁定 |
 | 相机 | `5_camera_read` | 检测已连接的 RealSense 序列号，分配给 top / left / right；"相机窗口"按钮按当前分配弹出三相机窗口，用来确认方向和位置 |
 
-会话运行时不能进入标定（会占用主手和相机），先按 `s` 停止。`--fake` 下标定是演示模式，不会写 ini。原来的四个脚本仍然可以单独使用。
+会话运行时不能进入标定（会占用主臂和相机），先按 `s` 停止。`--fake` 下标定是演示模式，不会写 ini。原来的四个脚本仍然可以单独使用。
