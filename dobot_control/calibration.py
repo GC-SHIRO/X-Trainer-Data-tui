@@ -367,3 +367,20 @@ def close_cameras(cams) -> None:
 def camera_frames(cams) -> List[np.ndarray]:
     """One BGR frame per camera (read() returns RGB), like scripts/5_camera_read.py."""
     return [c.read()[0][:, :, ::-1] for c in cams]
+
+
+# --------------------------------------------------------------------------- follower home pose
+def move_followers_home(host: str, port: int, log: Log = _nolog, timeout_ms: int = 10000) -> None:
+    """Drive both follower arms to the home pose (same motion as at connect) through the robot
+    server, e.g. as a visual reference before reading the master-hand offsets."""
+    from dobot_control.env import RobotEnv
+    from dobot_control.motion import robot_pose_init
+    from dobot_control.robots.robot_node import ZMQClientRobot
+    client = ZMQClientRobot(port=port, host=host, timeout_ms=timeout_ms)
+    try:
+        env = RobotEnv(client)
+        log("info", "从臂正在回到初始位...")
+        robot_pose_init(env)
+        log("info", "从臂已到初始位")
+    finally:
+        client.close()

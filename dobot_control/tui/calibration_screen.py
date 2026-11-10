@@ -78,10 +78,13 @@ class CalibrationScreen(Screen):
                     yield Static(self._ports_text(), id="ports-result", classes="result")
             with TabPane("零位", id="tab-offsets"):
                 with VerticalScroll():
-                    yield Static("把两只主手都摆到初始姿态（ini 里的 start_joints，与从臂初始位相同），"
-                                 "松开扳机，然后读取。",
+                    yield Static("作用：把主手读数和从臂关节零位对齐。标定后，主手处于读取时的姿态，"
+                                 "从臂就对应 start_joints（从臂初始位，左臂 -90,0,-90,0,90,90 度，右臂镜像）。\n"
+                                 "操作：可先点「从臂回初始位」让从臂作参照，再把两只主手摆成和从臂相同的姿态，"
+                                 "松开扳机，然后读取；读取和保存零位本身不会让任何一只臂动。",
                                  classes="help")
                     with Horizontal(classes="buttons"):
+                        yield Button("从臂回初始位", id="offsets-home")
                         yield Button("读取零位", id="offsets-read", variant="primary")
                         yield Button("保存零位", id="offsets-save", disabled=True)
                     yield Static("", id="offsets-result", classes="result")
@@ -145,6 +148,7 @@ class CalibrationScreen(Screen):
         handler = {
             "ports-scan": self._scan_ports, "ports-save": self._save_ports,
             "offsets-read": self._read_offsets, "offsets-save": self._save_offsets,
+            "offsets-home": self._home_followers,
             "hands-start": self._start_hands, "hands-stop": self._stop_hands,
             "cams-detect": self._detect_cams, "cams-save": self._save_cams,
             "cams-view": self._toggle_view,
@@ -227,6 +231,42 @@ class CalibrationScreen(Screen):
                                                "（没找到的保持 ini 原值）"), done)
 
     # ------------------------------------------------------------------ offsets
+    def _home_followers(self) -> None:
+        def done(yes: bool) -> None:
+            if yes:
+                self.query_one("#offsets-home", Button).disabled = True
+                self._home_worker()
+
+        self.app.push_screen(ConfirmScreen(
+            "两台从臂将运动到初始位（左臂 -90,0,-90,0,90,90 度，右臂镜像）。\n"
+            "请确认从臂周围没有人和障碍物。"), done)
+
+    @work(thread=True, group="home")
+    def _home_worker(self) -> None:
+        try:
+            ensure = getattr(self.app, "ensure_robot_server", None)
+            if ensure is None:
+                raise RuntimeError("当前界面无法启动从臂服务")
+            node = self.app.call_from_thread(ensure)
+            if node is not None and node.state == "starting":
+                self.cal_log("info", "等待从臂服务就绪（最长 60 秒）...")
+                if not node.wait_ready(60):
+                    raise RuntimeError("从臂服务启动失败：" + (node.tail[-1] if node.tail else "无输出"))
+            net = self.app.settings.network
+            cal.move_followers_home(net.zmq_host, net.zmq_port, log=self.cal_log)
+            self._ui(self.notify, "从臂已到初始位，现在把主手摆成相同姿态后读取零位")
+        except Exception as e:
+            from dobot_control.collector import describe_error
+            self.cal_log("error", f"从臂回初始位失败：{describe_error(e)}")
+        finally:
+            self._ui(self._home_done)
+
+    def _home_done(self) -> None:
+        try:
+            self.query_one("#offsets-home", Button).disabled = False
+        except Exception:
+            pass
+
     def _read_offsets(self) -> None:
         self.query_one("#offsets-read", Button).disabled = True
         self.cal_log("info", "正在读取主手关节 ...")

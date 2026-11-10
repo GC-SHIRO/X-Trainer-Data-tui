@@ -45,7 +45,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ```bash
 python -m scripts.1_find_port      # 识别主手/夹爪串口，写入 ini
 python scripts/3_just_buttonA.py   # 只测 A 键锁定/同步，用来调整手柄姿态
-python -m scripts.2_get_offset     # 主手摆到 start_joints 姿态后标定零位
+python -m scripts.2_get_offset     # 主手摆成从臂初始位的姿态，把主手读数与从臂零位对齐
 python -m scripts.5_camera_read    # （可选）检查三相机序列号与方向
 python experiments/launch_nodes.py # 终端 1：连接两台从臂，ZMQ 服务
 python experiments/run_control.py  # 终端 2：遥操作与录制
@@ -104,7 +104,7 @@ TUI 显示会话状态、两只手的锁定/同步、录制中的 episode 和帧
 | 标签页 | 对应脚本 | 说明 |
 |---|---|---|
 | 串口 | `1_find_port` | 依次探测主手（2M / 1M 波特率）和夹爪，显示 ini 当前值和扫描结果；没找全时保存前会确认，只写找到的 |
-| 零位 | `2_get_offset` | 两只主手摆到 start_joints 姿态后读取，显示新旧零位，变化超过 0.5 rad 时提示并在保存前确认 |
+| 零位 | `2_get_offset` | 把主手读数与从臂关节零位对齐：可先点「从臂回初始位」让两台从臂走到初始位作参照（会先确认，必要时自动启动从臂服务），再把主手摆成相同姿态后读取，标定后主手在该姿态时从臂即对应 start_joints；显示新旧零位，变化超过 0.5 rad 时提示并在保存前确认 |
 | 手柄检查 | `3_just_buttonA` | 短按 A 解锁/锁定，实时显示关节角度和按键，用来调整手柄；离开时两只手都会重新锁定 |
 | 相机 | `5_camera_read` | 检测已连接的 RealSense 序列号，分配给 top / left / right；"相机窗口"按钮按当前分配弹出三相机窗口，用来确认方向和位置 |
 

@@ -400,6 +400,19 @@ class CollectorApp(App):
             self.notify(f"无法启动从臂服务：{e}", severity="error")
         self._external_node = (0.0, False)
 
+    def ensure_robot_server(self) -> Optional[NodeProcess]:
+        """Main thread. Returns the node to wait for, or None if a server already listens.
+        Raises RuntimeError when the server is remote and not reachable."""
+        net = self.settings.network
+        if self.node and self.node.alive:
+            return self.node
+        if port_in_use(net.zmq_host, net.zmq_port):
+            return None
+        if not is_local(net.zmq_host):
+            raise RuntimeError(f"远程从臂服务 {net.zmq_host}:{net.zmq_port} 未运行")
+        self._start_node()
+        return self.node
+
     def action_toggle_node(self) -> None:
         net = self.settings.network
         if self.node and self.node.alive:
